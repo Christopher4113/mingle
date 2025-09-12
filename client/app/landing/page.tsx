@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Users, Calendar, Sparkles, Network, Heart, Zap } from "lucide-react"
+import Link from "next/link"
 
 export default function MingleLanding() {
   return (
@@ -25,19 +26,24 @@ export default function MingleLanding() {
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-            <Button
-              size="lg"
-              className="bg-white text-purple-600 hover:bg-white/90 text-lg px-8 py-6 rounded-full font-semibold shadow-2xl"
-            >
-              Sign Up Free
-            </Button>
-            <Button
-              size="lg"
-              variant="outline"
-              className="border-2 border-white text-white hover:bg-white hover:text-purple-600 text-lg px-8 py-6 rounded-full font-semibold bg-transparent"
-            >
-              Login
-            </Button>
+            <Link href="/signup">
+                <Button
+                    size="lg"
+                    className="bg-white text-purple-600 hover:bg-white/90 text-lg px-8 py-6 rounded-full font-semibold shadow-2xl"
+                >
+                    Sign Up Free
+                </Button>
+            </Link>
+            <Link href="/login">
+                <Button
+                    size="lg"
+                    variant="outline"
+                    className="border-2 border-white text-white hover:bg-white hover:text-purple-600 text-lg px-8 py-6 rounded-full font-semibold bg-transparent"
+                >
+                    Login
+                </Button>
+            </Link>
+            
           </div>
         </div>
       </section>
@@ -155,19 +161,23 @@ export default function MingleLanding() {
           </p>
 
           <div className="flex flex-col sm:flex-row gap-6 justify-center items-center">
-            <Button
-              size="lg"
-              className="bg-white text-purple-600 hover:bg-white/90 text-xl px-12 py-8 rounded-full font-bold shadow-2xl hover:shadow-3xl transition-all"
-            >
-              Get Started Today
-            </Button>
-            <Button
-              size="lg"
-              variant="outline"
-              className="border-2 border-white text-white hover:bg-white hover:text-purple-600 text-xl px-12 py-8 rounded-full font-bold bg-transparent"
-            >
-              Sign In
-            </Button>
+            <Link href="/signup">
+                 <Button
+                    size="lg"
+                    className="bg-white text-purple-600 hover:bg-white/90 text-xl px-12 py-8 rounded-full font-bold shadow-2xl hover:shadow-3xl transition-all"
+                >
+                    Get Started Today
+                </Button>
+            </Link>
+            <Link href="/login">
+                <Button
+                    size="lg"
+                    variant="outline"
+                    className="border-2 border-white text-white hover:bg-white hover:text-purple-600 text-xl px-12 py-8 rounded-full font-bold bg-transparent"
+                >
+                    Sign In
+                </Button>
+            </Link>
           </div>
         </div>
       </section>
