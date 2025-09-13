@@ -82,7 +82,7 @@ const Page = () => {
     }
   }
 
-  const handleGoogle = () => signIn("google", { callbackUrl: `http://localhost:3000/dashboard` })
+  const handleGoogle = () => signIn("google", { callbackUrl: `http://localhost:3000/menu` })
 
   const passwordStrength = getPasswordStrength(user.password)
 

@@ -55,7 +55,7 @@ const Page = () => {
       } else {
         setSuccess("Login successful! Welcome back to Mingle...")
         setTimeout(() => {
-          router.push("/dashboard")
+          router.push("/menu")
         }, 1500)
       }
     } catch (error: unknown) {
@@ -73,7 +73,7 @@ const Page = () => {
     }
   }
 
-  const handleGoogle = () => signIn("google", { callbackUrl: `http://localhost:3000/dashboard` })
+  const handleGoogle = () => signIn("google", { callbackUrl: `http://localhost:3000/menu` })
 
   return (
     <div
