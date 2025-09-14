@@ -8,12 +8,12 @@ import { useRouter } from "next/navigation"
 const sampleEvents = [
   {
     id: 1,
-    title: "Tech Networking Mixer",
+    title: "Professional Networking Mixer",
     date: "Dec 15, 2024",
     time: "6:00 PM",
     location: "Downtown Convention Center",
     attendees: 45,
-    category: "Technology",
+    category: "Networking",
   },
   {
     id: 2,
@@ -26,12 +26,12 @@ const sampleEvents = [
   },
   {
     id: 3,
-    title: "Startup Founders Breakfast",
+    title: "Social Impact Happy Hour",
     date: "Dec 20, 2024",
-    time: "8:00 AM",
-    location: "Innovation Hub",
+    time: "5:30 PM",
+    location: "Community Center",
     attendees: 28,
-    category: "Business",
+    category: "Social",
   },
   {
     id: 4,
@@ -40,7 +40,16 @@ const sampleEvents = [
     time: "2:00 PM",
     location: "Tech Campus Building A",
     attendees: 67,
-    category: "Technology",
+    category: "Learning",
+  },
+  {
+    id: 5,
+    title: "Mindfulness & Wellness Retreat",
+    date: "Dec 25, 2024",
+    time: "10:00 AM",
+    location: "Wellness Center",
+    attendees: 24,
+    category: "Wellness",
   },
 ]
 
@@ -66,7 +75,7 @@ const Page = () => {
     return (
       <div
         className="min-h-screen flex items-center justify-center"
-        style={{ background: "linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%)" }}
+        style={{ background: "linear-gradient(135deg, #4F46E5 0%, #EC4899 100%)" }}
       >
         <div className="flex items-center gap-2">
           <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
@@ -80,7 +89,7 @@ const Page = () => {
     return (
       <div
         className="min-h-screen flex items-center justify-center"
-        style={{ background: "linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%)" }}
+        style={{ background: "linear-gradient(135deg, #4F46E5 0%, #EC4899 100%)" }}
       >
         <div className="text-center">
           <div className="text-6xl mb-4">👥</div>
@@ -100,10 +109,7 @@ const Page = () => {
     selectedCategory === "All" ? sampleEvents : sampleEvents.filter((event) => event.category === selectedCategory)
 
   return (
-    <div
-      className="min-h-screen"
-      style={{ background: "linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%)" }}
-    >
+    <div className="min-h-screen" style={{ background: "linear-gradient(135deg, #4F46E5 0%, #EC4899 100%)" }}>
       {/* Header */}
       <div className="bg-white/10 backdrop-blur-sm border-b border-white/20">
         <div className="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
@@ -143,7 +149,7 @@ const Page = () => {
               <div className="flex items-center gap-4">
                 <div className="text-4xl">➕</div>
                 <div>
-                  <h3 className="text-xl font-semibold text-white group-hover:text-white/90">Create Event</h3>
+                  <h3 className="text-xl font-semibold text-white group-hover:text-white/90">Your Events</h3>
                   <p className="text-white/70">Host your own networking event</p>
                 </div>
               </div>
@@ -156,7 +162,7 @@ const Page = () => {
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-bold text-white">Discover Events</h2>
             <div className="flex gap-2">
-              {["All", "Technology", "Creative", "Business"].map((category) => (
+              {["All", "Networking", "Social", "Learning", "Creative", "Wellness"].map((category) => (
                 <button
                   key={category}
                   onClick={() => setSelectedCategory(category)}
