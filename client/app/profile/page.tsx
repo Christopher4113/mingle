@@ -1,15 +1,16 @@
 "use client"
 
+import type React from "react"
+import Image from "next/image"
 import { useState,useEffect } from "react"
 import Link from "next/link"
 import { useSession, signOut } from "next-auth/react"
 import { Button } from "@/components/ui/button"
 
 export default function ProfilePage() {
-
   const { data: session, status } = useSession()
-
   const [isEditing, setIsEditing] = useState(false)
+  const [profileImage, setProfileImage] = useState<string | null>(null)
   const [profile, setProfile] = useState({
     name: "Alex Johnson",
     email: "alex.johnson@email.com",
@@ -23,10 +24,21 @@ export default function ProfilePage() {
 
   const allInterests = ["Networking", "Social", "Learning", "Creative", "Wellness"]
 
+  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (file) {
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        setProfileImage(e.target?.result as string)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
   const handleSave = () => {
     setIsEditing(false)
     // Here you would typically save to a database
-    console.log("Profile saved:", profile)
+    console.log("Profile saved:", profile, "Profile image:", profileImage)
   }
 
   const handleInterestToggle = (interest: string) => {
@@ -37,6 +49,7 @@ export default function ProfilePage() {
         : [...prev.interests, interest],
     }))
   }
+
   useEffect(() => {
       if (status === "authenticated") {
         fetch("/api/set-token", {
@@ -112,7 +125,7 @@ export default function ProfilePage() {
           <div className="flex flex-col md:flex-row items-center gap-8">
             {/* Avatar */}
             <div className="relative">
-              <div className="w-32 h-32 bg-gradient-to-br from-blue-400 to-pink-400 rounded-full flex items-center justify-center text-4xl font-bold text-white">
+              <div className="w-32 h-32 bg-gradient-to-br from-blue-400 to-pink-400 rounded-full flex items-center justify-center text-4xl font-bold text-white overflow-hidden">
                 {(() => {
                     if (session?.user.name) {
                         return session.user.name.split(" ").map((n) => n[0]).join("").toUpperCase();
@@ -124,9 +137,21 @@ export default function ProfilePage() {
                 })()}
               </div>
               {isEditing && (
-                <button className="absolute -bottom-2 -right-2 bg-white/20 backdrop-blur-sm border border-white/30 rounded-full p-2 text-white hover:bg-white/30 transition-all duration-300">
-                  📷
-                </button>
+                <>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                    className="hidden"
+                    id="profile-image-upload"
+                  />
+                  <label
+                    htmlFor="profile-image-upload"
+                    className="absolute -bottom-2 -right-2 bg-white/20 backdrop-blur-sm border border-white/30 rounded-full w-10 h-10 flex items-center justify-center text-white hover:bg-white/30 transition-all duration-300 cursor-pointer"
+                  >
+                    <span className="text-lg">+</span>
+                  </label>
+                </>
               )}
             </div>
 
