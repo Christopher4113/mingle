@@ -54,6 +54,10 @@ model User {
   email         String?   @unique
   emailVerified DateTime? @map("email_verified")
   image         String?
+  profileImageUrl String?
+  bio           String?         
+  location      String?         
+  interests     String[]
   accounts      Account[]
   sessions      Session[]
  

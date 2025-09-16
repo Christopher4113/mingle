@@ -1,22 +1,23 @@
 "use client"
 
 import type React from "react"
-import Image from "next/image"
 import { useState,useEffect } from "react"
 import Link from "next/link"
 import { useSession, signOut } from "next-auth/react"
 import { Button } from "@/components/ui/button"
+import axios from "axios"
+import { dataUrlToBlob } from "@/helpers/dataUrlToBlob"
+import { useEdgeStore } from "@/lib/edgestore"
 
 export default function ProfilePage() {
   const { data: session, status } = useSession()
   const [isEditing, setIsEditing] = useState(false)
-  const [profileImage, setProfileImage] = useState<string | null>(null)
+  const [profileImage, setProfileImage] = useState<string | File | null>(null)
+  const { edgestore } = useEdgeStore()
   const [profile, setProfile] = useState({
-    name: "Alex Johnson",
-    email: "alex.johnson@email.com",
     bio: "Passionate about connecting with like-minded individuals and exploring new opportunities in tech and creativity.",
     location: "San Francisco, CA",
-    interests: ["Networking", "Creative", "Learning", "Wellness"],
+    interests: ["Networking", "Social", "Creative", "Learning", "Wellness" ],
     joinedDate: "January 2024",
     eventsAttended: 12,
     connectionsMode: 8,
@@ -35,12 +36,7 @@ export default function ProfilePage() {
     }
   }
 
-  const handleSave = () => {
-    setIsEditing(false)
-    // Here you would typically save to a database
-    console.log("Profile saved:", profile, "Profile image:", profileImage)
-  }
-
+  
   const handleInterestToggle = (interest: string) => {
     setProfile((prev) => ({
       ...prev,
@@ -94,6 +90,67 @@ export default function ProfilePage() {
         </div>
       </div>
     )
+  }
+  function getCookie(name: string) {
+    // simple cookie parser
+    const match = document.cookie.match(new RegExp("(^|;\\s*)" + name + "=([^;]*)"))
+    return match ? decodeURIComponent(match[2]) : undefined
+  }
+
+  const handleSave = async () => {
+    try {
+      let imageUrl: string | undefined
+
+      // 1) If there's a new image, upload it to EdgeStore and grab the URL
+      if (profileImage) {
+        if (profileImage instanceof File) {
+          const { url } = await edgestore.myPublicFiles.upload({ file: profileImage })
+          imageUrl = url
+        } else if (typeof profileImage === "string" && profileImage.startsWith("data:")) {
+          // convert dataURL -> Blob -> File for upload
+          const blob = await dataUrlToBlob(profileImage)
+          const file = new File([blob], `profile-${Date.now()}.png`, { type: blob.type || "image/png" })
+          const { url } = await edgestore.myPublicFiles.upload({ file })
+          imageUrl = url
+        } else if (typeof profileImage === "string") {
+          // already a hosted URL (rare in this flow)
+          imageUrl = profileImage
+        }
+      }
+
+      // 2) Build JSON payload for your backend
+      const payload = {
+        bio: profile.bio,
+        location: profile.location,
+        interests: profile.interests,
+        profileImageUrl: imageUrl, // may be undefined if user didn’t change image
+      }
+
+      // 3) Send PUT with JWT in Authorization + cookies (belt & suspenders)
+      const token = getCookie("token")
+      const res = await axios.put("/api/users/profile", payload, {
+        withCredentials: true,
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+
+      if (res.data?.ok) {
+        const u = res.data.user
+        setProfile((prev) => ({
+          ...prev,
+          bio: u.bio ?? prev.bio,
+          location: u.location ?? prev.location,
+          interests: Array.isArray(u.interests) ? u.interests : prev.interests,
+        }))
+        if (u.image) setProfileImage(u.image)
+        setIsEditing(false)
+      } else {
+        console.error(res.data)
+        alert("Failed to save profile.")
+      }
+    } catch (e) {
+      console.error(e)
+      alert("Something went wrong while saving.")
+    }
   }
 
   return (
@@ -157,17 +214,7 @@ export default function ProfilePage() {
 
             {/* Basic Info */}
             <div className="flex-1 text-center md:text-left">
-              {isEditing ? (
-                <input
-                  type="text"
-                  value={session?.user.username || session?.user.name || ""}
-                  onChange={(e) => setProfile((prev) => ({ ...prev, name: e.target.value }))}
-                  className="text-3xl font-bold bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white placeholder-white/60 mb-4 w-full"
-                />
-              ) : (
-                <h1 className="text-3xl font-bold mb-4">{session?.user.username || session?.user.name || "User"}</h1>
-              )}
-
+              <h1 className="text-3xl font-bold mb-4">{session?.user.username || session?.user.name || "User"}</h1>
               <p className="text-white/80 mb-2">📧 {session?.user.email || "Email"}</p>
               <p className="text-white/80 mb-4">
                 📍{" "}
@@ -247,31 +294,6 @@ export default function ProfilePage() {
           {isEditing && (
             <p className="text-white/60 text-sm mt-4">Click on interests to add or remove them from your profile</p>
           )}
-        </div>
-
-        {/* Settings Section */}
-        <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-8">
-          <h2 className="text-2xl font-bold mb-6">Settings</h2>
-          <div className="space-y-4">
-            <div className="flex justify-between items-center">
-              <span className="text-white/90">Email Notifications</span>
-              <button className="bg-gradient-to-r from-blue-500 to-purple-500 w-12 h-6 rounded-full relative">
-                <div className="absolute right-1 top-1 w-4 h-4 bg-white rounded-full"></div>
-              </button>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-white/90">Profile Visibility</span>
-              <button className="bg-white/20 w-12 h-6 rounded-full relative">
-                <div className="absolute left-1 top-1 w-4 h-4 bg-white rounded-full"></div>
-              </button>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-white/90">Event Recommendations</span>
-              <button className="bg-gradient-to-r from-blue-500 to-purple-500 w-12 h-6 rounded-full relative">
-                <div className="absolute right-1 top-1 w-4 h-4 bg-white rounded-full"></div>
-              </button>
-            </div>
-          </div>
         </div>
 
         {/* Save Button */}
