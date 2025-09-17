@@ -1,37 +1,30 @@
-import { NextRequest } from "next/server";
-import jwt from "jsonwebtoken";
-import { serialize } from "cookie";
-import { getToken } from "next-auth/jwt";
+import { NextResponse, NextRequest } from "next/server"
+import { getToken } from "next-auth/jwt"
+import jwt from "jsonwebtoken"
 
 export async function GET(req: NextRequest) {
-  const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
+  // Read the NextAuth JWT (the one NextAuth sets), not your custom cookie
+  const nextAuthToken = await getToken({
+    req,
+    secret: process.env.NEXTAUTH_SECRET, // must match your authOptions.secret
+  })
 
-  if (!token?.sub) {
-    return new Response(JSON.stringify({ message: "Unauthorized" }), { status: 401 });
+  // In your callbacks, you ensured token.sub is always the userId
+  const userId = nextAuthToken?.sub
+  if (!userId) {
+    return NextResponse.json({ ok: false, error: "Unauthenticated" }, { status: 401 })
   }
 
-  const customToken = jwt.sign(
-    {   
-        sub: token.sub,
-        username: token.username || token.name,
-    },
-    process.env.TOKEN_SECRET!, // Make sure this is set in .env
-    { expiresIn: "7d" }
-  );
+  // Create your own JWT cookie signed with TOKEN_SECRET, containing { id }
+  const custom = jwt.sign({ id: userId }, process.env.TOKEN_SECRET!, { expiresIn: "30d" })
 
-  const cookie = serialize("token", customToken, {
-    httpOnly: false,
-    path: "/",
-    maxAge: 60 * 60 * 24 * 7,
-    secure: process.env.NODE_ENV === "production",
+  const res = NextResponse.json({ ok: true })
+  res.cookies.set("token", custom, {
+    httpOnly: true,
     sameSite: "lax",
-  });
-
-  return new Response(JSON.stringify({ message: "Custom JWT set" }), {
-    status: 200,
-    headers: {
-      "Set-Cookie": cookie,
-      "Content-Type": "application/json",
-    },
-  });
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 30,
+  })
+  return res
 }
