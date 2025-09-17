@@ -121,7 +121,10 @@ const Page = () => {
           </div>
           <Button
             variant="destructive"
-            onClick={() => signOut()}
+            onClick={async () => {
+                  await fetch("/api/users/logout"); // Clear custom JWT
+                  signOut(); // Then call NextAuth signOut
+                }}
             className="bg-red-500/20 backdrop-blur-sm border border-red-300/30 text-white hover:bg-red-500/30"
           >
             Sign Out

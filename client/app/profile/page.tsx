@@ -169,7 +169,10 @@ export default function ProfilePage() {
           ← Back to Menu
         </Link>
         <button
-          onClick={() => signOut()}
+          onClick={async () => {
+                  await fetch("/api/users/logout"); // Clear custom JWT
+                  signOut(); // Then call NextAuth signOut
+                }}
           className="bg-red-500/20 backdrop-blur-sm border border-red-300/30 rounded-xl px-6 py-3 text-white hover:bg-red-500/30 transition-all duration-300"
         >
           Logout
