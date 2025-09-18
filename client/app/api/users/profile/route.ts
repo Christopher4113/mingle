@@ -40,6 +40,8 @@ export async function PUT(req: NextRequest) {
         location: true,
         interests: true,
         profileImageUrl: true,
+        connections: true,
+        events: true,
       },
     })
 
@@ -49,5 +51,40 @@ export async function PUT(req: NextRequest) {
     const message = err instanceof Error ? err.message : "Failed to update profile"
     const status = /token|jwt/i.test(message) ? 401 : 500
     return NextResponse.json({ error: message }, { status })
+  }
+}
+
+
+export async function GET(req: NextRequest) {
+  try {
+    const userId = getDataFromToken(req);
+
+    const user = await db.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        username: true,
+        name: true,
+        email: true,
+        createdAt: true,
+        bio: true,
+        location: true,
+        interests: true,
+        profileImageUrl: true,
+        connections: true,
+        events: true,
+      },
+    });
+
+    if (!user) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    return NextResponse.json({ ok: true, user }, { status: 200 });
+  } catch (err) {
+    console.error("GET /api/users/profile error:", err);
+    const message = err instanceof Error ? err.message : "Failed to fetch profile";
+    const status = /token|jwt/i.test(message) ? 401 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }

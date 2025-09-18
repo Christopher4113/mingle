@@ -58,6 +58,8 @@ model User {
   bio           String?         
   location      String?         
   interests     String[]
+  connections   Int       @default(0)
+  events        Int       @default(0)
   accounts      Account[]
   sessions      Session[]
  

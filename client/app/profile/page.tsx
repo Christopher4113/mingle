@@ -1,13 +1,14 @@
 "use client"
 
 import type React from "react"
-import { useState,useEffect } from "react"
+import { useState,useEffect,useCallback } from "react"
 import Link from "next/link"
 import { useSession, signOut } from "next-auth/react"
 import { Button } from "@/components/ui/button"
 import axios from "axios"
 import { dataUrlToBlob } from "@/helpers/dataUrlToBlob"
 import { useEdgeStore } from "@/lib/edgestore"
+import Image from "next/image"
 
 export default function ProfilePage() {
   const { data: session, status } = useSession()
@@ -15,14 +16,16 @@ export default function ProfilePage() {
   const [profileImage, setProfileImage] = useState<string | File | null>(null)
   const { edgestore } = useEdgeStore()
   const [profile, setProfile] = useState({
-    bio: "Passionate about connecting with like-minded individuals and exploring new opportunities in tech and creativity.",
-    location: "San Francisco, CA",
-    interests: ["Networking", "Social", "Creative", "Learning", "Wellness" ],
-    joinedDate: "January 2024",
-    eventsAttended: 12,
-    connectionsMode: 8,
+    bio: "",
+    location: "",
+    interests: [] as string[],
+    joinedDate: "",      // you set from createdAt when GET returns it
+    eventsAttended: 0,
+    connectionsMade: 0,
   })
 
+  const [existingImageUrl, setExistingImageUrl] = useState<string | null>(null);
+  const isDataUrl = (url?: string | null) => !!url && url.startsWith('data:');
   const allInterests = ["Networking", "Social", "Learning", "Creative", "Wellness"]
 
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -47,17 +50,74 @@ export default function ProfilePage() {
   }
 
   useEffect(() => {
+    (async () => {
       if (status === "authenticated") {
-        fetch("/api/set-token", {
-          method: "GET",
-          credentials: "include", // very important to include the cookie
-        }).then((res) => {
-          if (!res.ok) {
-            console.error("Failed to set custom JWT cookie")
+        try {
+          const res1 = await fetch("/api/set-token", { method: "GET", credentials: "include" });
+          if (!res1.ok) console.error("Failed to set custom JWT cookie");
+
+          // define it right here so no deps complain
+          const token = getCookie("token");
+          const res = await fetch("/api/users/profile", {
+            method: "GET",
+            credentials: "include",
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          });
+          if (!res.ok) throw new Error("Failed to load profile");
+          const { user } = await res.json();
+
+          setProfile((prev) => ({
+            ...prev,
+            bio: user.bio ?? prev.bio,
+            location: user.location ?? prev.location,
+            interests: Array.isArray(user.interests) ? user.interests : prev.interests,
+            joinedDate: user.createdAt ? new Date(user.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long' }) : prev.joinedDate,
+            eventsAttended: typeof user.events === "number" ? user.events : prev.eventsAttended,
+            connectionsMade: typeof user.connections === "number" ? user.connections : prev.connectionsMade,
+          }));
+
+          if (user.profileImageUrl) {
+            setExistingImageUrl(user.profileImageUrl);
+            setProfileImage(user.profileImageUrl);
           }
-        })
+        } catch (e) {
+          console.error(e);
+        }
       }
-  }, [status])
+    })();
+  }, [status]);
+
+  const loadProfile = useCallback(async () => {
+    const token = getCookie("token");
+    const res = await fetch("/api/users/profile", {
+      method: "GET",
+      credentials: "include",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error("Failed to load profile");
+    const { user } = await res.json();
+
+    setProfile((prev) => ({
+      ...prev,
+      bio: user.bio ?? prev.bio,
+      location: user.location ?? prev.location,
+      interests: Array.isArray(user.interests) ? user.interests : prev.interests,
+      eventsAttended: typeof user.events === "number" ? user.events : prev.eventsAttended,
+      connectionsMade: typeof user.connections === "number" ? user.connections : prev.connectionsMade,
+    }));
+
+    if (user.profileImageUrl) {
+      setExistingImageUrl(user.profileImageUrl);
+      setProfileImage(user.profileImageUrl);
+    }
+  }, [setProfile, setExistingImageUrl, setProfileImage]);
+
+  function isEdgeStoreUrl(url?: string | null) {
+    if (!url) return false;
+    return url.includes("edgestore") || url.includes("publicfiles"); // adjust if needed
+  }
+    
+  
   if (status === "loading") {
     return (
       <div
@@ -99,59 +159,72 @@ export default function ProfilePage() {
 
   const handleSave = async () => {
     try {
-      let imageUrl: string | undefined
+      let newUploadUrl: string | undefined;
 
-      // 1) If there's a new image, upload it to EdgeStore and grab the URL
+      // 1) Upload first if changed
       if (profileImage) {
         if (profileImage instanceof File) {
-          const { url } = await edgestore.myPublicFiles.upload({ file: profileImage })
-          imageUrl = url
+          const { url } = await edgestore.myPublicFiles.upload({ file: profileImage });
+          newUploadUrl = url;
         } else if (typeof profileImage === "string" && profileImage.startsWith("data:")) {
-          // convert dataURL -> Blob -> File for upload
-          const blob = await dataUrlToBlob(profileImage)
-          const file = new File([blob], `profile-${Date.now()}.png`, { type: blob.type || "image/png" })
-          const { url } = await edgestore.myPublicFiles.upload({ file })
-          imageUrl = url
+          const blob = await dataUrlToBlob(profileImage);
+          const file = new File([blob], `profile-${Date.now()}.png`, { type: blob.type || "image/png" });
+          const { url } = await edgestore.myPublicFiles.upload({ file });
+          newUploadUrl = url;
         } else if (typeof profileImage === "string") {
-          // already a hosted URL (rare in this flow)
-          imageUrl = profileImage
+          newUploadUrl = profileImage; // pasted URL case
         }
       }
 
-      // 2) Build JSON payload for your backend
-      const payload = {
+      const nextImageUrl = newUploadUrl ?? existingImageUrl ?? undefined;
+
+      // 2) PUT
+      const token = getCookie("token");
+      const res = await axios.put("/api/users/profile", {
         bio: profile.bio,
         location: profile.location,
         interests: profile.interests,
-        profileImageUrl: imageUrl, // may be undefined if user didn’t change image
-      }
-
-      // 3) Send PUT with JWT in Authorization + cookies (belt & suspenders)
-      const token = getCookie("token")
-      const res = await axios.put("/api/users/profile", payload, {
+        profileImageUrl: nextImageUrl,
+      }, {
         withCredentials: true,
         headers: token ? { Authorization: `Bearer ${token}` } : {},
-      })
+      });
 
-      if (res.data?.ok) {
-        const u = res.data.user
-        setProfile((prev) => ({
-          ...prev,
-          bio: u.bio ?? prev.bio,
-          location: u.location ?? prev.location,
-          interests: Array.isArray(u.interests) ? u.interests : prev.interests,
-        }))
-        if (u.image) setProfileImage(u.image)
-        setIsEditing(false)
-      } else {
-        console.error(res.data)
-        alert("Failed to save profile.")
+      if (!res.data?.ok) {
+        console.error(res.data);
+        alert("Failed to save profile.");
+        return;
       }
+
+      // 3) Re-fetch fresh data from DB (includes connections/events and canonical image URL)
+      const oldUrl = existingImageUrl;
+      await loadProfile();
+
+      
+      if (newUploadUrl && oldUrl && newUploadUrl !== oldUrl && isEdgeStoreUrl(oldUrl)) {
+        try {
+          await edgestore.myPublicFiles.delete({ url: oldUrl });
+        } catch (delErr) {
+          console.warn("Failed to delete old profile image:", delErr);
+        }
+      }
+
+      setIsEditing(false);
     } catch (e) {
-      console.error(e)
-      alert("Something went wrong while saving.")
+      console.error(e);
+      alert("Something went wrong while saving.");
     }
-  }
+  };
+
+  // helper: are we previewing a newly picked image (dataURL) vs the existing URL?
+  const hasNewImage =
+    typeof profileImage === "string" && profileImage.startsWith("data:");
+
+  // compute what to show inside the avatar circle
+  const displayImageUrl =
+    typeof profileImage === "string"
+      ? profileImage // dataURL or pasted URL
+      : existingImageUrl || null;
 
   return (
     <div
@@ -185,17 +258,37 @@ export default function ProfilePage() {
           <div className="flex flex-col md:flex-row items-center gap-8">
             {/* Avatar */}
             <div className="relative">
-              <div className="w-32 h-32 bg-gradient-to-br from-blue-400 to-pink-400 rounded-full flex items-center justify-center text-4xl font-bold text-white overflow-hidden">
-                {(() => {
-                    if (session?.user.name) {
-                        return session.user.name.split(" ").map((n) => n[0]).join("").toUpperCase();
-                    }
-                    if (session?.user.username) {
-                        return session.user.username.slice(0, 2).toUpperCase();
-                    }
-                    return "U";
-                })()}
+              <div className="w-32 h-32 rounded-full overflow-hidden relative bg-gradient-to-br from-blue-400 to-pink-400">
+                {displayImageUrl ? (
+                  isDataUrl(displayImageUrl) ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={displayImageUrl}
+                      alt="Profile image"
+                      className="absolute inset-0 w-full h-full object-cover"
+                    />
+                  ) : (
+                    <Image
+                      src={displayImageUrl}
+                      alt="Profile image"
+                      fill
+                      sizes="2048px"
+                      className="object-cover"
+                      // If you prefer to bypass optimization for this host, you can also add:
+                      // unoptimized
+                    />
+                  )
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center text-4xl font-bold text-white">
+                    {(() => {
+                      if (session?.user?.name) return session.user.name.split(' ').map(n => n[0]).join('').toUpperCase();
+                      if (session?.user?.username) return session.user.username.slice(0, 2).toUpperCase();
+                      return 'U';
+                    })()}
+                  </div>
+                )}
               </div>
+
               {isEditing && (
                 <>
                   <input
@@ -211,6 +304,12 @@ export default function ProfilePage() {
                   >
                     <span className="text-lg">+</span>
                   </label>
+
+                  {hasNewImage && (
+                    <span className="absolute -bottom-3 left-1/2 -translate-x-1/2 text-xs px-2 py-1 rounded-md bg-emerald-500/80 text-white shadow">
+                      image added ✓
+                    </span>
+                  )}
                 </>
               )}
             </div>
@@ -239,7 +338,7 @@ export default function ProfilePage() {
                   <p className="text-sm text-white/80">Events Attended</p>
                 </div>
                 <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-lg px-4 py-2">
-                  <span className="text-2xl font-bold">{profile.connectionsMode}</span>
+                  <span className="text-2xl font-bold">{profile.connectionsMade}</span>
                   <p className="text-sm text-white/80">Connections Made</p>
                 </div>
                 <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-lg px-4 py-2">
