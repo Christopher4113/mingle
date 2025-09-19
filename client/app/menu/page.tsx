@@ -147,7 +147,7 @@ const Page = () => {
             </div>
           </Link>
 
-          <Link href="/create-event">
+          <Link href="/create">
             <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-6 hover:bg-white/20 transition-all duration-300 cursor-pointer group">
               <div className="flex items-center gap-4">
                 <div className="text-4xl">➕</div>
