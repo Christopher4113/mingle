@@ -1,15 +1,19 @@
 import type { NextConfig } from "next";
 
-const nextConfig: NextConfig = {
+const nextConfig = {
   images: {
     remotePatterns: [
       {
         protocol: "https",
         hostname: "files.edgestore.dev",
-        pathname: "/**", // or narrow it if you want
+        pathname: "/**",
       },
     ],
   },
-};
+  turbopack: {
+    // Tell Next.js that THIS folder is the workspace root
+    root: __dirname,
+  },
+} satisfies NextConfig;
 
 export default nextConfig;

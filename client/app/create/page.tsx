@@ -209,13 +209,23 @@ export default function EventsPage() {
                     name="category"
                     value={formData.category}
                     onChange={handleInputChange}
-                    className="w-full px-4 py-3 rounded-lg bg-white/20 text-white border border-white/30 focus:border-white focus:outline-none"
+                    className="w-full px-4 py-3 rounded-lg bg-white/20 border border-white/30 focus:border-white focus:outline-none text-white [color-scheme:dark]"
                   >
-                    <option value="Networking">Networking</option>
-                    <option value="Social">Social</option>
-                    <option value="Learning">Learning</option>
-                    <option value="Creative">Creative</option>
-                    <option value="Wellness">Wellness</option>
+                    <option className="text-black" value="Networking">
+                      Networking
+                    </option>
+                    <option className="text-black" value="Social">
+                      Social
+                    </option>
+                    <option className="text-black" value="Learning">
+                      Learning
+                    </option>
+                    <option className="text-black" value="Creative">
+                      Creative
+                    </option>
+                    <option className="text-black" value="Wellness">
+                      Wellness
+                    </option>
                   </select>
                 </div>
 
