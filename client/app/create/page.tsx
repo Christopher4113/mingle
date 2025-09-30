@@ -1,35 +1,60 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import Link from "next/link"
+import type React from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
+import Link from "next/link";
+import axios from "axios";
+import { Button } from "@/components/ui/button";
+import { useSession, signOut } from "next-auth/react";
 
-export default function EventsPage() {
-  const [activeTab, setActiveTab] = useState("create")
-  const [events, setEvents] = useState([
-    {
-      id: 1,
-      title: "Tech Networking Mixer",
-      description: "Connect with fellow tech professionals in a relaxed environment.",
-      date: "2024-01-15",
-      time: "18:00",
-      location: "Downtown Tech Hub",
-      category: "Networking",
-      attendees: 24,
-      maxAttendees: 50,
-    },
-    {
-      id: 2,
-      title: "Creative Workshop: Digital Art",
-      description: "Learn digital art techniques from industry professionals.",
-      date: "2024-01-20",
-      time: "14:00",
-      location: "Art Studio Central",
-      category: "Creative",
-      attendees: 12,
-      maxAttendees: 20,
-    },
-  ])
+/** ----- Small helpers ----- */
+function getCookie(name: string) {
+  const m = document.cookie.match(new RegExp("(^|;\\s*)" + name + "=([^;]*)"));
+  return m ? decodeURIComponent(m[2]) : undefined;
+}
 
+function toDateStr(d: Date) {
+  // yyyy-mm-dd
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 10);
+}
+
+function toTimeStr(d: Date) {
+  // HH:MM (24h)
+  return d.toTimeString().slice(0, 5);
+}
+
+/** Event shape used in the UI (date & time split for the form) */
+type EventUI = {
+  id: string;
+  title: string;
+  description: string;
+  date: string; // "2024-01-15"
+  time: string; // "18:00"
+  location: string;
+  category: string;
+  attendees: number;
+  maxAttendees: number;
+  inviteOnly: boolean;
+};
+type EventFromServer = {
+  id: string;
+  title: string;
+  description: string;
+  startsAt: string;   // ISO string from DB
+  location: string;
+  category: string;
+  attendees: number;
+  maxAttendees: number;
+  inviteOnly: boolean;
+};
+
+const Page = () => {
+  const { status } = useSession();
+
+  const [activeTab, setActiveTab] = useState<"create" | "manage">("create");
+  const [events, setEvents] = useState<EventUI[]>([]);
   const [formData, setFormData] = useState({
     title: "",
     description: "",
@@ -38,54 +63,70 @@ export default function EventsPage() {
     location: "",
     category: "Networking",
     maxAttendees: "",
-  })
+    inviteOnly: false,
+  });
+  const [editingEvent, setEditingEvent] = useState<EventUI | null>(null);
 
-  type EventType = {
-    id: number
-    title: string
-    description: string
-    date: string
-    time: string
-    location: string
-    category: string
-    attendees: number
-    maxAttendees: number
-  }
+  const axiosConfig = useMemo(() => {
+    const token = getCookie("token");
+    return {
+      withCredentials: true,
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    };
+  }, []);
 
-  const [editingEvent, setEditingEvent] = useState<EventType | null>(null)
+  /** Transform server Event -> EventUI */
+  const toUI = useCallback((e: EventFromServer): EventUI => {
+    // backend returns `startsAt` (ISO)
+    const d = new Date(e.startsAt);
+    return {
+      id: e.id,
+      title: e.title,
+      description: e.description,
+      date: toDateStr(d),
+      time: toTimeStr(d),
+      location: e.location,
+      category: e.category,
+      attendees: e.attendees ?? 0,
+      maxAttendees: e.maxAttendees ?? 0,
+      inviteOnly: Boolean(e.inviteOnly),
+    };
+  }, []);
 
-  const handleInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
-  ) => {
-    const { name, value } = e.target
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }))
-  }
-
-  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    if (editingEvent) {
-      setEvents((prev) =>
-        prev.map((event) =>
-          event.id === editingEvent.id
-            ? { ...event, ...formData, maxAttendees: Number.parseInt(formData.maxAttendees) }
-            : event,
-        ),
-      )
-      setEditingEvent(null)
-    } else {
-      const newEvent = {
-        id: Date.now(),
-        ...formData,
-        maxAttendees: Number.parseInt(formData.maxAttendees),
-        attendees: 0,
-      }
-      setEvents((prev) => [...prev, newEvent])
+  /** GET events (also used after POST/PUT/DELETE) */
+  const loadEvents = useCallback(async () => {
+    // make sure our custom JWT cookie exists (like your profile page did)
+    try {
+      await fetch("/api/set-token", { method: "GET", credentials: "include" });
+    } catch {
+      /* non-fatal */
     }
+    const token = getCookie("token");
+    const cfg = {
+      withCredentials: true,
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    };
+    const res = await axios.get("/api/users/create", cfg);
+    if (res.data?.ok && Array.isArray(res.data.events)) {
+      setEvents(res.data.events.map(toUI));
+    }
+  }, [toUI]);
 
-    // Reset form
+  useEffect(() => {
+    if (status === "authenticated") {
+      loadEvents().catch(console.error);
+    }
+  }, [status, loadEvents]);
+
+  /** ----- Form handlers ----- */
+  const handleInputChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
+  ) => {
+    const { name, value } = e.target;
+    setFormData((p) => ({ ...p, [name]: value }));
+  };
+
+  const resetForm = () =>
     setFormData({
       title: "",
       description: "",
@@ -94,11 +135,46 @@ export default function EventsPage() {
       location: "",
       category: "Networking",
       maxAttendees: "",
-    })
-  }
+      inviteOnly: false,
+    });
 
-  const handleEdit = (event: EventType) => {
-    setEditingEvent(event)
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    const body = {
+      title: formData.title,
+      description: formData.description,
+      date: formData.date,
+      time: formData.time,
+      location: formData.location,
+      category: formData.category,
+      maxAttendees: Number.parseInt(formData.maxAttendees),
+      inviteOnly: formData.inviteOnly,
+    };
+
+    try {
+      if (editingEvent) {
+        await axios.put(
+          "/api/users/create",
+          { id: editingEvent.id, ...body },
+          axiosConfig,
+        );
+      } else {
+        await axios.post("/api/users/create", body, axiosConfig);
+      }
+
+      await loadEvents(); // always refresh from DB
+      setEditingEvent(null);
+      resetForm();
+      setActiveTab("manage");
+    } catch (err) {
+      console.error(err);
+      alert("Failed to save event.");
+    }
+  };
+
+  const handleEdit = (event: EventUI) => {
+    setEditingEvent(event);
     setFormData({
       title: event.title,
       description: event.description,
@@ -107,35 +183,70 @@ export default function EventsPage() {
       location: event.location,
       category: event.category,
       maxAttendees: event.maxAttendees.toString(),
-    })
-    setActiveTab("create")
-  }
+      inviteOnly: event.inviteOnly,
+    });
+    setActiveTab("create");
+  };
 
-  const handleDelete = (eventId: number) => {
-    if (confirm("Are you sure you want to delete this event?")) {
-      setEvents((prev) => prev.filter((event) => event.id !== eventId))
+  const handleDelete = async (eventId: string) => {
+    if (!confirm("Are you sure you want to delete this event?")) return;
+    try {
+      await axios.delete("/api/users/create", {
+        ...axiosConfig,
+        data: { id: eventId },
+      });
+      await loadEvents(); // refresh list after delete
+    } catch (err) {
+      console.error(err);
+      alert("Failed to delete event.");
     }
-  }
+  };
 
   const cancelEdit = () => {
-    setEditingEvent(null)
-    setFormData({
-      title: "",
-      description: "",
-      date: "",
-      time: "",
-      location: "",
-      category: "Networking",
-      maxAttendees: "",
-    })
+    setEditingEvent(null);
+    resetForm();
+  };
+
+  /** ----- Auth gates ----- */
+  if (status === "loading") {
+    return (
+      <div
+        className="min-h-screen flex items-center justify-center"
+        style={{ background: "linear-gradient(135deg, #4F46E5 0%, #EC4899 100%)" }}
+      >
+        <div className="flex items-center gap-2">
+          <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+          <p className="text-white">Loading...</p>
+        </div>
+      </div>
+    );
   }
 
+  if (status === "unauthenticated") {
+    return (
+      <div
+        className="min-h-screen flex items-center justify-center"
+        style={{ background: "linear-gradient(135deg, #4F46E5 0%, #EC4899 100%)" }}
+      >
+        <div className="text-center">
+          <div className="text-6xl mb-4">👥</div>
+          <h2 className="text-2xl font-bold text-white mb-2">Access Required</h2>
+          <p className="text-white/80 mb-6">Please login to see your Mingle dashboard</p>
+          <Link href="/login">
+            <Button className="bg-white/20 backdrop-blur-sm border border-white/30 text-white hover:bg-white/30 transition-all duration-300">
+              Go to Login
+            </Button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  /** ----- UI ----- */
   return (
     <div
       className="min-h-screen bg-slate-900"
-      style={{
-        background: "linear-gradient(135deg, #4F46E5 0%, #EC4899 100%)",
-      }}
+      style={{ background: "linear-gradient(135deg, #4F46E5 0%, #EC4899 100%)" }}
     >
       <div className="flex justify-between items-center p-6">
         <Link
@@ -145,12 +256,15 @@ export default function EventsPage() {
           ← Back to Menu
         </Link>
         <h1 className="text-2xl font-bold text-white">My Events</h1>
-        <Link
-          href="/"
-          className="bg-red-500/80 backdrop-blur-sm text-white px-4 py-2 rounded-lg hover:bg-red-600/80 transition-all duration-200"
+        <button
+          onClick={async () => {
+            await fetch("/api/users/logout");
+            signOut();
+          }}
+          className="bg-red-500/20 backdrop-blur-sm border border-red-300/30 rounded-xl px-6 py-3 text-white hover:bg-red-500/30 transition-all duration-300"
         >
           Logout
-        </Link>
+        </button>
       </div>
 
       <div className="max-w-6xl mx-auto p-6">
@@ -211,21 +325,11 @@ export default function EventsPage() {
                     onChange={handleInputChange}
                     className="w-full px-4 py-3 rounded-lg bg-white/20 border border-white/30 focus:border-white focus:outline-none text-white [color-scheme:dark]"
                   >
-                    <option className="text-black" value="Networking">
-                      Networking
-                    </option>
-                    <option className="text-black" value="Social">
-                      Social
-                    </option>
-                    <option className="text-black" value="Learning">
-                      Learning
-                    </option>
-                    <option className="text-black" value="Creative">
-                      Creative
-                    </option>
-                    <option className="text-black" value="Wellness">
-                      Wellness
-                    </option>
+                    <option className="text-black" value="Networking">Networking</option>
+                    <option className="text-black" value="Social">Social</option>
+                    <option className="text-black" value="Learning">Learning</option>
+                    <option className="text-black" value="Creative">Creative</option>
+                    <option className="text-black" value="Wellness">Wellness</option>
                   </select>
                 </div>
 
@@ -274,7 +378,7 @@ export default function EventsPage() {
                     value={formData.maxAttendees}
                     onChange={handleInputChange}
                     required
-                    min="1"
+                    min={1}
                     className="w-full px-4 py-3 rounded-lg bg-white/20 text-white placeholder-white/70 border border-white/30 focus:border-white focus:outline-none"
                     placeholder="Maximum number of attendees"
                   />
@@ -292,6 +396,37 @@ export default function EventsPage() {
                   className="w-full px-4 py-3 rounded-lg bg-white/20 text-white placeholder-white/70 border border-white/30 focus:border-white focus:outline-none resize-none"
                   placeholder="Describe your event..."
                 />
+              </div>
+
+              <div className="flex items-center justify-between bg-white/10 rounded-lg p-4 border border-white/30">
+                <div>
+                  <label className="block text-white font-medium mb-1">Event Access</label>
+                  <p className="text-white/70 text-sm">
+                    {formData.inviteOnly ? "Only invited guests can attend" : "Open to everyone"}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setFormData((p) => ({ ...p, inviteOnly: !p.inviteOnly }))}
+                  className={`relative inline-flex h-8 w-16 items-center rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-purple-600 ${
+                    formData.inviteOnly ? "bg-purple-600" : "bg-white/30"
+                  }`}
+                  role="switch"
+                  aria-checked={formData.inviteOnly}
+                  aria-label="Toggle invite only"
+                >
+                  <span
+                    className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform duration-200 ${
+                      formData.inviteOnly ? "translate-x-9" : "translate-x-1"
+                    }`}
+                  />
+                </button>
+              </div>
+
+              <div className="flex items-center space-x-3 text-white/90 text-sm">
+                <span className={!formData.inviteOnly ? "font-semibold" : ""}>Everyone</span>
+                <span>•</span>
+                <span className={formData.inviteOnly ? "font-semibold" : ""}>Invite Only</span>
               </div>
 
               <button
@@ -323,9 +458,18 @@ export default function EventsPage() {
                 {events.map((event) => (
                   <div key={event.id} className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 shadow-xl">
                     <div className="flex justify-between items-start mb-4">
-                      <span className="bg-blue-500/80 text-white px-3 py-1 rounded-full text-sm font-medium">
-                        {event.category}
-                      </span>
+                      <div className="flex flex-col gap-2">
+                        <span className="bg-blue-500/80 text-white px-3 py-1 rounded-full text-sm font-medium">
+                          {event.category}
+                        </span>
+                        <span
+                          className={`px-3 py-1 rounded-full text-sm font-medium ${
+                            event.inviteOnly ? "bg-purple-500/80 text-white" : "bg-green-500/80 text-white"
+                          }`}
+                        >
+                          {event.inviteOnly ? "🔒 Invite Only" : "🌍 Everyone"}
+                        </span>
+                      </div>
                       <div className="flex space-x-2">
                         <button
                           onClick={() => handleEdit(event)}
@@ -350,7 +494,7 @@ export default function EventsPage() {
                     <div className="space-y-2 text-white/90">
                       <div className="flex items-center">
                         <span className="mr-2">📅</span>
-                        <span>{new Date(event.date).toLocaleDateString()}</span>
+                        <span>{new Date(`${event.date}T00:00:00`).toLocaleDateString()}</span>
                       </div>
                       <div className="flex items-center">
                         <span className="mr-2">🕒</span>
@@ -390,5 +534,6 @@ export default function EventsPage() {
         )}
       </div>
     </div>
-  )
+  );
 }
+export default Page
