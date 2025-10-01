@@ -9,6 +9,7 @@ import { useSession, signOut } from "next-auth/react";
 
 /** ----- Small helpers ----- */
 function getCookie(name: string) {
+  if (typeof document === "undefined") return undefined; // SSR guard
   const m = document.cookie.match(new RegExp("(^|;\\s*)" + name + "=([^;]*)"));
   return m ? decodeURIComponent(m[2]) : undefined;
 }
@@ -25,28 +26,46 @@ function toTimeStr(d: Date) {
   return d.toTimeString().slice(0, 5);
 }
 
+function combineToISO(date: string, time: string) {
+  // Combine local date+time to ISO string normalized to UTC (preserving local clock)
+  const d = new Date(`${date}T${time || "00:00"}:00`);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString();
+}
+
+function to12h(hhmm: string) {
+  const [hStr, m] = hhmm.split(":");
+  let h = parseInt(hStr, 10);
+  const ampm = h >= 12 ? "PM" : "AM";
+  h = h % 12 || 12; // 0->12
+  return `${h}:${m} ${ampm}`;
+}
+
 /** Event shape used in the UI (date & time split for the form) */
 type EventUI = {
   id: string;
   title: string;
   description: string;
-  date: string; // "2024-01-15"
-  time: string; // "18:00"
+  date: string;     // start: "2024-01-15"
+  time: string;     // start: "18:00"
+  endDate: string;  // end:   "2024-01-15"
+  endTime: string;  // end:   "20:00"
   location: string;
   category: string;
   attendees: number;
   maxAttendees: number;
   inviteOnly: boolean;
 };
+
 type EventFromServer = {
   id: string;
   title: string;
   description: string;
   startsAt: string;   // ISO string from DB
+  endsAt?: string;    // ISO string from DB (optional for backwards compat)
   location: string;
   category: string;
-  attendees: number;
-  maxAttendees: number;
+  attendees?: number;
+  maxAttendees?: number;
   inviteOnly: boolean;
 };
 
@@ -60,6 +79,8 @@ const Page = () => {
     description: "",
     date: "",
     time: "",
+    endDate: "",
+    endTime: "",
     location: "",
     category: "Networking",
     maxAttendees: "",
@@ -77,14 +98,19 @@ const Page = () => {
 
   /** Transform server Event -> EventUI */
   const toUI = useCallback((e: EventFromServer): EventUI => {
-    // backend returns `startsAt` (ISO)
-    const d = new Date(e.startsAt);
+    // backend returns `startsAt` (ISO) and maybe `endsAt`
+    const start = new Date(e.startsAt);
+    const end =
+      e.endsAt ? new Date(e.endsAt) : new Date(start.getTime() + 60 * 60 * 1000); // default +1h
+
     return {
       id: e.id,
       title: e.title,
       description: e.description,
-      date: toDateStr(d),
-      time: toTimeStr(d),
+      date: toDateStr(start),
+      time: toTimeStr(start),
+      endDate: toDateStr(end),
+      endTime: toTimeStr(end),
       location: e.location,
       category: e.category,
       attendees: e.attendees ?? 0,
@@ -95,7 +121,7 @@ const Page = () => {
 
   /** GET events (also used after POST/PUT/DELETE) */
   const loadEvents = useCallback(async () => {
-    // make sure our custom JWT cookie exists (like your profile page did)
+    // ensure our custom JWT cookie exists
     try {
       await fetch("/api/set-token", { method: "GET", credentials: "include" });
     } catch {
@@ -120,7 +146,9 @@ const Page = () => {
 
   /** ----- Form handlers ----- */
   const handleInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>,
+    e: React.ChangeEvent<
+      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+    >,
   ) => {
     const { name, value } = e.target;
     setFormData((p) => ({ ...p, [name]: value }));
@@ -132,6 +160,8 @@ const Page = () => {
       description: "",
       date: "",
       time: "",
+      endDate: "",
+      endTime: "",
       location: "",
       category: "Networking",
       maxAttendees: "",
@@ -141,11 +171,30 @@ const Page = () => {
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
+    // Default endDate/Time to start if left blank
+    const endDate = formData.endDate || formData.date;
+    const endTime = formData.endTime || formData.time;
+
+    const startsAtISO = combineToISO(formData.date, formData.time);
+    const endsAtISO = combineToISO(endDate, endTime);
+
+    if (!formData.date || !formData.time) {
+      alert("Please provide a start date and time.");
+      return;
+    }
+    if (new Date(endsAtISO).getTime() < new Date(startsAtISO).getTime()) {
+      alert("End time must be after the start time.");
+      return;
+    }
+
     const body = {
       title: formData.title,
       description: formData.description,
       date: formData.date,
       time: formData.time,
+      endDate,
+      endTime,
+      endsAt: endsAtISO, // NEW: send computed ISO end time
       location: formData.location,
       category: formData.category,
       maxAttendees: Number.parseInt(formData.maxAttendees),
@@ -180,6 +229,8 @@ const Page = () => {
       description: event.description,
       date: event.date,
       time: event.time,
+      endDate: event.endDate,
+      endTime: event.endTime,
       location: event.location,
       category: event.category,
       maxAttendees: event.maxAttendees.toString(),
@@ -272,7 +323,9 @@ const Page = () => {
           <button
             onClick={() => setActiveTab("create")}
             className={`px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
-              activeTab === "create" ? "bg-white text-purple-600 shadow-lg" : "bg-white/20 text-white hover:bg-white/30"
+              activeTab === "create"
+                ? "bg-white text-purple-600 shadow-lg"
+                : "bg-white/20 text-white hover:bg-white/30"
             }`}
           >
             {editingEvent ? "Edit Event" : "Create Event"}
@@ -280,7 +333,9 @@ const Page = () => {
           <button
             onClick={() => setActiveTab("manage")}
             className={`px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
-              activeTab === "manage" ? "bg-white text-purple-600 shadow-lg" : "bg-white/20 text-white hover:bg-white/30"
+              activeTab === "manage"
+                ? "bg-white text-purple-600 shadow-lg"
+                : "bg-white/20 text-white hover:bg-white/30"
             }`}
           >
             Manage Events
@@ -289,7 +344,9 @@ const Page = () => {
 
         {activeTab === "create" && (
           <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-8 shadow-xl">
-            <h2 className="text-2xl font-bold text-white mb-6">{editingEvent ? "Edit Event" : "Create New Event"}</h2>
+            <h2 className="text-2xl font-bold text-white mb-6">
+              {editingEvent ? "Edit Event" : "Create New Event"}
+            </h2>
 
             {editingEvent && (
               <div className="mb-4">
@@ -305,7 +362,9 @@ const Page = () => {
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-white font-medium mb-2">Event Title</label>
+                  <label className="block text-white font-medium mb-2">
+                    Event Title
+                  </label>
                   <input
                     type="text"
                     name="title"
@@ -318,18 +377,30 @@ const Page = () => {
                 </div>
 
                 <div>
-                  <label className="block text-white font-medium mb-2">Category</label>
+                  <label className="block text-white font-medium mb-2">
+                    Category
+                  </label>
                   <select
                     name="category"
                     value={formData.category}
                     onChange={handleInputChange}
                     className="w-full px-4 py-3 rounded-lg bg-white/20 border border-white/30 focus:border-white focus:outline-none text-white [color-scheme:dark]"
                   >
-                    <option className="text-black" value="Networking">Networking</option>
-                    <option className="text-black" value="Social">Social</option>
-                    <option className="text-black" value="Learning">Learning</option>
-                    <option className="text-black" value="Creative">Creative</option>
-                    <option className="text-black" value="Wellness">Wellness</option>
+                    <option className="text-black" value="Networking">
+                      Networking
+                    </option>
+                    <option className="text-black" value="Social">
+                      Social
+                    </option>
+                    <option className="text-black" value="Learning">
+                      Learning
+                    </option>
+                    <option className="text-black" value="Creative">
+                      Creative
+                    </option>
+                    <option className="text-black" value="Wellness">
+                      Wellness
+                    </option>
                   </select>
                 </div>
 
@@ -357,8 +428,44 @@ const Page = () => {
                   />
                 </div>
 
+                {/* NEW: End Date */}
                 <div>
-                  <label className="block text-white font-medium mb-2">Location</label>
+                  <label className="block text-white font-medium mb-2">
+                    End Date
+                  </label>
+                  <input
+                    type="date"
+                    name="endDate"
+                    value={formData.endDate}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-3 rounded-lg bg-white/20 text-white border border-white/30 focus:border-white focus:outline-none"
+                  />
+                  <p className="text-xs text-white/70 mt-1">
+                    Leave blank to use the same day as the start.
+                  </p>
+                </div>
+
+                {/* NEW: End Time */}
+                <div>
+                  <label className="block text-white font-medium mb-2">
+                    End Time
+                  </label>
+                  <input
+                    type="time"
+                    name="endTime"
+                    value={formData.endTime}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-3 rounded-lg bg-white/20 text-white border border-white/30 focus:border-white focus:outline-none"
+                  />
+                  <p className="text-xs text-white/70 mt-1">
+                    Leave blank to use the same time as the start.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-white font-medium mb-2">
+                    Location
+                  </label>
                   <input
                     type="text"
                     name="location"
@@ -371,7 +478,9 @@ const Page = () => {
                 </div>
 
                 <div>
-                  <label className="block text-white font-medium mb-2">Max Attendees</label>
+                  <label className="block text-white font-medium mb-2">
+                    Max Attendees
+                  </label>
                   <input
                     type="number"
                     name="maxAttendees"
@@ -386,7 +495,9 @@ const Page = () => {
               </div>
 
               <div>
-                <label className="block text-white font-medium mb-2">Description</label>
+                <label className="block text-white font-medium mb-2">
+                  Description
+                </label>
                 <textarea
                   name="description"
                   value={formData.description}
@@ -400,14 +511,20 @@ const Page = () => {
 
               <div className="flex items-center justify-between bg-white/10 rounded-lg p-4 border border-white/30">
                 <div>
-                  <label className="block text-white font-medium mb-1">Event Access</label>
+                  <label className="block text-white font-medium mb-1">
+                    Event Access
+                  </label>
                   <p className="text-white/70 text-sm">
-                    {formData.inviteOnly ? "Only invited guests can attend" : "Open to everyone"}
+                    {formData.inviteOnly
+                      ? "Only invited guests can attend"
+                      : "Open to everyone"}
                   </p>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setFormData((p) => ({ ...p, inviteOnly: !p.inviteOnly }))}
+                  onClick={() =>
+                    setFormData((p) => ({ ...p, inviteOnly: !p.inviteOnly }))
+                  }
                   className={`relative inline-flex h-8 w-16 items-center rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-purple-600 ${
                     formData.inviteOnly ? "bg-purple-600" : "bg-white/30"
                   }`}
@@ -424,9 +541,13 @@ const Page = () => {
               </div>
 
               <div className="flex items-center space-x-3 text-white/90 text-sm">
-                <span className={!formData.inviteOnly ? "font-semibold" : ""}>Everyone</span>
+                <span className={!formData.inviteOnly ? "font-semibold" : ""}>
+                  Everyone
+                </span>
                 <span>•</span>
-                <span className={formData.inviteOnly ? "font-semibold" : ""}>Invite Only</span>
+                <span className={formData.inviteOnly ? "font-semibold" : ""}>
+                  Invite Only
+                </span>
               </div>
 
               <button
@@ -445,7 +566,9 @@ const Page = () => {
 
             {events.length === 0 ? (
               <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-8 text-center">
-                <p className="text-white text-lg">You have not created any events yet.</p>
+                <p className="text-white text-lg">
+                  You have not created any events yet.
+                </p>
                 <button
                   onClick={() => setActiveTab("create")}
                   className="mt-4 bg-white text-purple-600 px-6 py-3 rounded-lg font-medium hover:bg-gray-100 transition-all duration-200"
@@ -456,7 +579,10 @@ const Page = () => {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {events.map((event) => (
-                  <div key={event.id} className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 shadow-xl">
+                  <div
+                    key={event.id}
+                    className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 shadow-xl"
+                  >
                     <div className="flex justify-between items-start mb-4">
                       <div className="flex flex-col gap-2">
                         <span className="bg-blue-500/80 text-white px-3 py-1 rounded-full text-sm font-medium">
@@ -464,10 +590,14 @@ const Page = () => {
                         </span>
                         <span
                           className={`px-3 py-1 rounded-full text-sm font-medium ${
-                            event.inviteOnly ? "bg-purple-500/80 text-white" : "bg-green-500/80 text-white"
+                            event.inviteOnly
+                              ? "bg-purple-500/80 text-white"
+                              : "bg-green-500/80 text-white"
                           }`}
                         >
-                          {event.inviteOnly ? "🔒 Invite Only" : "🌍 Everyone"}
+                          {event.inviteOnly
+                            ? "🔒 Invite Only"
+                            : "🌍 Everyone"}
                         </span>
                       </div>
                       <div className="flex space-x-2">
@@ -488,17 +618,32 @@ const Page = () => {
                       </div>
                     </div>
 
-                    <h3 className="text-xl font-bold text-white mb-2">{event.title}</h3>
-                    <p className="text-white/80 mb-4 line-clamp-2">{event.description}</p>
+                    <h3 className="text-xl font-bold text-white mb-2">
+                      {event.title}
+                    </h3>
+                    <p className="text-white/80 mb-4 line-clamp-2">
+                      {event.description}
+                    </p>
 
                     <div className="space-y-2 text-white/90">
                       <div className="flex items-center">
                         <span className="mr-2">📅</span>
-                        <span>{new Date(`${event.date}T00:00:00`).toLocaleDateString()}</span>
+                        <span>
+                          {new Date(`${event.date}T00:00:00`).toLocaleDateString()}
+                          {event.endDate &&
+                          event.endDate !== event.date
+                            ? ` → ${new Date(
+                                `${event.endDate}T00:00:00`,
+                              ).toLocaleDateString()}`
+                            : ""}
+                        </span>
                       </div>
                       <div className="flex items-center">
                         <span className="mr-2">🕒</span>
-                        <span>{event.time}</span>
+                        <span>
+                          {to12h(event.time)}
+                          {event.endTime ? ` - ${to12h(event.endTime)}` : ""}
+                        </span>
                       </div>
                       <div className="flex items-center">
                         <span className="mr-2">📍</span>
@@ -535,5 +680,5 @@ const Page = () => {
       </div>
     </div>
   );
-}
-export default Page
+};
+export default Page;

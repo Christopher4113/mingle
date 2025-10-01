@@ -67,6 +67,7 @@ export async function POST(req: NextRequest) {
       title,
       description,
       startsAt: toStartsAt(date, time),
+      endsAt: new Date(new Date(toStartsAt(date, time)).getTime() + 2 * 60 * 60 * 1000), // default to 2 hours later
       location,
       category,
       attendees: 0,

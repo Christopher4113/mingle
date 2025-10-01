@@ -71,6 +71,7 @@ model Event {
   title        String
   description  String
   startsAt     DateTime
+  endsAt       DateTime
   location     String
   category     String
   attendees    Int      @default(0)
