@@ -151,11 +151,56 @@ export default function EventDetailPage() {
     setInvitedPeople((prev) => prev.filter((p) => p.id !== personId))
   }
 
-  const handleSaveAbout = () => {
-    // Save to backend - replace with actual API call
-    console.log("Saving about text:", aboutText)
-    setIsEditingAbout(false)
-  }
+  useEffect(() => {
+    const run = async () => {
+      if (status !== "authenticated" || !params.id) return;
+
+      // ensure cookie token exists for SSR/client parity
+      await fetch("/api/set-token", { method: "GET", credentials: "include" });
+      const token = getCookie("token");
+      const cfg = { withCredentials: true, headers: token ? { Authorization: `Bearer ${token}` } : {} };
+
+      try {
+        const res = await axios.get(`/api/users/events/${params.id}`, cfg);
+        if (res.data?.ok) setAboutText(res.data.profile ?? "");
+      } catch (e) {
+        console.error("Failed to load profile", e);
+      }
+    };
+
+    run();
+  }, [status, params.id]);
+
+  const handleSaveAbout = async () => {
+    try {
+      await fetch("/api/set-token", { method: "GET", credentials: "include" });
+      const token = getCookie("token");
+      const cfg: RequestInit = {
+        method: "PUT",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ profile: aboutText }),
+      };
+
+      const res = await fetch(`/api/users/events/${params.id}`, cfg);
+      const data = await res.json();
+
+      if (!res.ok || !data?.ok) throw new Error(data?.error || "Failed to save");
+      // optional: refresh from GET to be 100% in sync
+      const refreshed = await axios.get(`/api/users/events/${params.id}`, {
+        withCredentials: true,
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (refreshed.data?.ok) setAboutText(refreshed.data.profile ?? "");
+      setIsEditingAbout(false);
+    } catch (e) {
+      console.error("Saving about text failed:", e);
+      // You could toast an error here
+    }
+  };
 
   const handleRecommendPeople = () => {
     // Mock recommendations - replace with actual API call
@@ -339,7 +384,7 @@ export default function EventDetailPage() {
                 <Button
                   onClick={() => setIsEditingAbout(false)}
                   variant="outline"
-                  className="border-white/30 text-white hover:bg-white/10"
+                  className="bg-white text-purple-600 hover:bg-gray-100"
                 >
                   Cancel
                 </Button>
