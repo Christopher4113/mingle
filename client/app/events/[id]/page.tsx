@@ -10,11 +10,38 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Card } from "@/components/ui/card"
 import { Search, UserPlus, UserMinus, Users, Sparkles } from "lucide-react"
+import { useRef } from "react";
+
+function Avatar({ src, alt }: { src?: string | null; alt: string }) {
+  return (
+    <div className="w-9 h-9 rounded-full overflow-hidden bg-white/10 flex items-center justify-center shrink-0">
+      {src ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={src}
+          alt={alt}
+          className="w-full h-full object-cover rounded-full"
+          width={36}
+          height={36}
+          loading="lazy"
+        />
+      ) : (
+        <span className="text-white/70 text-sm font-semibold">
+          {alt.slice(0, 2).toUpperCase()}
+        </span>
+      )}
+    </div>
+  );
+}
 
 function getCookie(name: string) {
   if (typeof document === "undefined") return undefined
   const m = document.cookie.match(new RegExp("(^|;\\s*)" + name + "=([^;]*)"))
   return m ? decodeURIComponent(m[2]) : undefined
+}
+function authHeaders() {
+  const token = getCookie("token");
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 function to12h(hhmm: string) {
@@ -59,7 +86,24 @@ type Person = {
   name: string
   email: string
   status: Status
+  username?: string | null;
+  bio?: string;
+  location?: string;
+  image?: string | null;
 }
+type ApiPerson = {
+  id: string;
+  username?: string | null;
+  name?: string | null;
+  email?: string | null;
+  bio?: string | null;
+  location?: string | null;
+  image?: string | null;
+  status: Status;
+};
+
+type InvitedResp = { ok: boolean; invited: ApiPerson[] };
+type SearchResp  = { ok: boolean; results: ApiPerson[] };
 
 export default function EventDetailPage() {
   const params = useParams() as { id?: string }
@@ -124,32 +168,144 @@ export default function EventDetailPage() {
     }
   }, [params.id])
 
+  const fetchInvited = useCallback(async () => {
+    await fetch("/api/set-token", { method: "GET", credentials: "include" });
+    const res = await axios.get<InvitedResp>(`/api/users/events/${params.id}/invites`, {
+      withCredentials: true,
+      headers: authHeaders(),
+    });
+
+    if (res.data?.ok) {
+      const invited: Person[] = (res.data.invited ?? []).map((u): Person => ({
+        id: u.id,
+        name: u.name || u.username || "User",
+        email: u.email ?? "",
+        status: u.status,
+        username: u.username ?? null,
+        bio: u.bio ?? "",
+        location: u.location ?? "",
+        image: u.image ?? null,
+      }));
+      setInvitedPeople(invited);
+    }
+  }, [params.id]);
+  const doTypeahead = useCallback(
+    async (q: string) => {
+      if (!q.trim()) { setSearchResults([]); return; }
+      await fetch("/api/set-token", { method: "GET", credentials: "include" });
+
+      const res = await axios.get<SearchResp>(`/api/users/events/${params.id}/invites`, {
+        params: { q, take: 5, prefix: 1 },     // ask server for “startsWith” if supported
+        withCredentials: true,
+        headers: authHeaders(),
+      });
+
+      if (res.data?.ok) {
+        const results: Person[] = (res.data.results ?? []).map((u): Person => ({
+          id: u.id,
+          name: u.name || u.username || "User",
+          email: u.email ?? "",
+          status: "none",
+          username: u.username ?? null,
+          bio: u.bio ?? "",
+          location: u.location ?? "",
+          image: u.image ?? null,
+        }));
+        setSearchResults(results);
+      }
+    },
+    [params.id]
+  );
+
   useEffect(() => {
     if (status === "authenticated" && params.id) {
       loadEvent()
+      fetchInvited();
     }
-  }, [status, params.id, loadEvent])
+  }, [status, params.id, loadEvent, fetchInvited])
+
+  const typeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    // live search as the user types
+    if (typeTimer.current) clearTimeout(typeTimer.current);
+    typeTimer.current = setTimeout(() => {
+      void doTypeahead(searchQuery);
+    }, 250);  // 250–300ms feels good
+
+    return () => {
+      if (typeTimer.current) clearTimeout(typeTimer.current);
+    };
+  }, [searchQuery, doTypeahead]);
+
 
   const handleSearch = async () => {
-    if (!searchQuery.trim()) return
+    if (!searchQuery.trim()) return;
+    await fetch("/api/set-token", { method: "GET", credentials: "include" });
 
-    // Mock search - replace with actual API call
-    const mockResults = [
-      { id: "1", name: "John Doe", email: "john@example.com", status: "none" as const },
-      { id: "2", name: "Jane Smith", email: "jane@example.com", status: "none" as const },
-      { id: "3", name: "Bob Johnson", email: "bob@example.com", status: "none" as const },
-    ] satisfies Person[];
-    setSearchResults(mockResults);
-  }
+    const res = await axios.get<SearchResp>(`/api/users/events/${params.id}/invites`, {
+      params: { q: searchQuery, take: 5, prefix: 1 },
+      withCredentials: true,
+      headers: authHeaders(),
+    });
 
-  const handleInvite = (person: Person) => {
-    setInvitedPeople((prev) => [...prev, { ...person, status: "invited" }])
-    setSearchResults((prev) => prev.filter((p) => p.id !== person.id))
-  }
+    if (res.data?.ok) {
+      const results: Person[] = (res.data.results ?? []).map((u): Person => ({
+        id: u.id,
+        name: u.name || u.username || "User",
+        email: u.email ?? "",
+        status: "none",
+        username: u.username ?? null,
+        bio: u.bio ?? "",
+        location: u.location ?? "",
+        image: u.image ?? null,
+      }));
+      setSearchResults(results);
+    }
 
-  const handleKickOut = (personId: string) => {
-    setInvitedPeople((prev) => prev.filter((p) => p.id !== personId))
-  }
+    setSearchQuery("");        // 👈 clear the input
+  };
+
+  const handleInvite = async (person: Person) => {
+    await fetch("/api/set-token", { method: "GET", credentials: "include" });
+
+    const res = await axios.post(
+      `/api/users/events/${params.id}/invites`,
+      { userId: person.id },
+      { withCredentials: true, headers: authHeaders() }
+    );
+
+    if (res.data?.ok) {
+      // optimistic add
+      setInvitedPeople(prev => [...prev, { ...person, status: "invited" }]);
+      setSearchResults(prev => prev.filter(p => p.id !== person.id));
+    }
+    setSearchQuery("");  // clear input after invite
+  };
+
+  const handleKickOut = async (personId: string) => {
+    await fetch("/api/set-token", { method: "GET", credentials: "include" });
+
+    const res = await axios.delete<InvitedResp>(`/api/users/events/${params.id}/invites`, {
+      params: { userId: personId },
+      withCredentials: true,
+      headers: authHeaders(),
+    });
+
+    if (res.data?.ok) {
+      const invited: Person[] = (res.data.invited ?? []).map((u): Person => ({
+        id: u.id,
+        name: u.name || u.username || "User",
+        email: u.email ?? "",
+        status: u.status,
+        username: u.username ?? null,
+        bio: u.bio ?? "",
+        location: u.location ?? "",
+        image: u.image ?? null,
+      }));
+      setInvitedPeople(invited);
+    }
+  };
 
   useEffect(() => {
     const run = async () => {
@@ -428,10 +584,21 @@ export default function EventDetailPage() {
             <div className="space-y-2">
               <h3 className="text-white font-semibold mb-2">Search Results</h3>
               {searchResults.map((person) => (
-                <div key={person.id} className="flex items-center justify-between bg-white/5 rounded-lg p-4">
-                  <div>
-                    <p className="text-white font-medium">{person.name}</p>
-                    <p className="text-white/60 text-sm">{person.email}</p>
+                <div key={person.id} className="flex items-center justify-between bg-white/5 rounded-lg p-3">
+                  <div className="flex items-center gap-3">
+                    <Avatar src={person.image ?? undefined} alt={person.name} />
+                    <div>
+                      <p className="text-white font-medium">
+                        {person.name}
+                        {person.username ? (
+                          <span className="text-white/60 text-sm ml-2">@{person.username}</span>
+                        ) : null}
+                      </p>
+                      <p className="text-white/60 text-xs">{person.email}</p>
+                      {person.location ? (
+                        <p className="text-white/60 text-xs">📍 {person.location}</p>
+                      ) : null}
+                    </div>
                   </div>
                   <Button
                     onClick={() => handleInvite(person)}
@@ -445,6 +612,7 @@ export default function EventDetailPage() {
               ))}
             </div>
           )}
+          
         </Card>
 
         <Card className="bg-white/10 backdrop-blur-sm border-white/20 p-6">
@@ -458,13 +626,24 @@ export default function EventDetailPage() {
           ) : (
             <div className="space-y-2">
               {invitedPeople.map((person) => (
-                <div key={person.id} className="flex items-center justify-between bg-white/5 rounded-lg p-4">
-                  <div>
-                    <p className="text-white font-medium">{person.name}</p>
-                    <p className="text-white/60 text-sm">{person.email}</p>
-                    <span className="inline-block mt-1 px-2 py-1 bg-blue-500/50 text-white text-xs rounded">
-                      {person.status}
-                    </span>
+                <div key={person.id} className="flex items-center justify-between bg-white/5 rounded-lg p-3">
+                  <div className="flex items-center gap-3">
+                    <Avatar src={person.image ?? undefined} alt={person.name} />
+                    <div>
+                      <p className="text-white font-medium">
+                        {person.name}
+                        {person.username ? (
+                          <span className="text-white/60 text-sm ml-2">@{person.username}</span>
+                        ) : null}
+                      </p>
+                      <p className="text-white/60 text-xs">{person.email}</p>
+                      {person.location ? (
+                        <p className="text-white/60 text-xs">📍 {person.location}</p>
+                      ) : null}
+                      <span className="inline-block mt-1 px-2 py-1 bg-blue-500/50 text-white text-[10px] rounded">
+                        {person.status}
+                      </span>
+                    </div>
                   </div>
                   <Button
                     onClick={() => handleKickOut(person.id)}

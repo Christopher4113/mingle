@@ -89,12 +89,19 @@ model Event {
   
 }
 
+enum AttendeeStatus {
+  INVITED
+  ATTENDING
+}
+
+
 model EventAttendee {
   id        String   @id @default(cuid())
   eventId   String   @map("event_id")
   userId    String   @map("user_id")
   profile   String
   createdAt DateTime @default(now())
+  status    AttendeeStatus @default(INVITED) 
 
   event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
