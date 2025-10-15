@@ -52,6 +52,8 @@ function to12h(hhmm: string) {
   return `${h}:${m} ${ampm}`
 }
 
+
+
 type EventFromServer = {
   id: string
   title: string
@@ -279,6 +281,7 @@ export default function EventDetailPage() {
       // optimistic add
       setInvitedPeople(prev => [...prev, { ...person, status: "invited" }]);
       setSearchResults(prev => prev.filter(p => p.id !== person.id));
+      await fetchInvited();  
     }
     setSearchQuery("");  // clear input after invite
   };

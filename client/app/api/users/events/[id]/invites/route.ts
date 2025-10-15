@@ -147,6 +147,21 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       update: { status: "INVITED" },
     });
 
+    const evt = await db.event.findUnique({
+      where: { id },
+      select: { title: true },
+    });
+
+    await db.notification.create({
+      data: {
+        userId,
+        type: "EVENT_INVITE",
+        title: "Event Invitation",
+        message: `You've been invited to ${evt?.title ?? "an event"}`,
+        data: { eventId: id, eventTitle: evt?.title ?? "" },
+      },
+    });
+
     return NextResponse.json({ ok: true });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Failed";
