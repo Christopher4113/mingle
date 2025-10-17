@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getDataFromToken } from "@/helpers/getDataFromToken";
+import { sendNotificationEmail } from "@/lib/mailer";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -161,6 +162,34 @@ export async function POST(req: NextRequest, ctx: Ctx) {
         data: { eventId: id, eventTitle: evt?.title ?? "" },
       },
     });
+
+    const notif = await db.notification.create({
+      data: {
+        userId,
+        type: "EVENT_INVITE",
+        title: "Event Invitation",
+        message: `You've been invited to ${evt?.title ?? "an event"}`,
+        data: { eventId: id, eventTitle: evt?.title ?? "" },
+      },
+    });
+    
+    const invitee = await db.user.findUnique({
+      where: { id: userId },
+      select: { email: true },
+    });
+
+    // Fire-and-forget email (do not block request if mail fails)
+    if (invitee?.email) {
+      // Avoid throwing if SMTP fails; but log it for debugging
+      sendNotificationEmail({
+        to: invitee.email,
+        notificationId: notif.id,
+        title: "Event Invitation",
+        message: `You've been invited to ${evt?.title ?? "an event"}. Click to view.`,
+      }).catch((err) => {
+        console.error("Email send failed:", err);
+      });
+    }
 
     return NextResponse.json({ ok: true });
   } catch (err: unknown) {

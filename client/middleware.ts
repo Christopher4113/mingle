@@ -38,6 +38,8 @@ export const config = {
         '/menu',
         '/create',
         '/saved',
-        '/profile',      
+        '/profile',
+        '/events/:path*',
+        '/notifications/:path*',      
     ]
 };
