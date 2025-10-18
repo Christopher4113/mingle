@@ -313,7 +313,7 @@ const Page = () => {
                 <div className="text-4xl">➕</div>
                 <div>
                   <h3 className="text-xl font-semibold text-white group-hover:text-white/90">Your Events</h3>
-                  <p className="text-white/70">Host your own networking event</p>
+                  <p className="text-white/70">Host your own or join networking event</p>
                 </div>
               </div>
             </div>

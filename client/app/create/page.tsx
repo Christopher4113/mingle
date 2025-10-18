@@ -52,6 +52,7 @@ type EventUI = {
   attendees: number
   maxAttendees: number
   inviteOnly: boolean
+  hostName?: string // Added for joined events to show host name
 }
 
 type EventFromServer = {
@@ -65,13 +66,15 @@ type EventFromServer = {
   attendees?: number
   maxAttendees?: number
   inviteOnly: boolean
+  hostName?: string // Added for joined events
 }
 
 const Page = () => {
   const { status } = useSession()
 
-  const [activeTab, setActiveTab] = useState<"create" | "manage">("create")
+  const [activeTab, setActiveTab] = useState<"create" | "manage" | "joined">("create")
   const [events, setEvents] = useState<EventUI[]>([])
+  const [joinedEvents, setJoinedEvents] = useState<EventUI[]>([])
   const [formData, setFormData] = useState({
     title: "",
     description: "",
@@ -113,6 +116,7 @@ const Page = () => {
       attendees: e.attendees ?? 0,
       maxAttendees: e.maxAttendees ?? 0,
       inviteOnly: Boolean(e.inviteOnly),
+      hostName: e.hostName, // Include host name
     }
   }, [])
 
@@ -135,11 +139,29 @@ const Page = () => {
     }
   }, [toUI])
 
+  const loadJoinedEvents = useCallback(async () => {
+    try {
+      await fetch("/api/set-token", { method: "GET", credentials: "include" })
+    } catch {
+      /* non-fatal */
+    }
+    const token = getCookie("token")
+    const cfg = {
+      withCredentials: true,
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    }
+    const res = await axios.get("/api/users/joined-events", cfg)
+    if (res.data?.ok && Array.isArray(res.data.events)) {
+      setJoinedEvents(res.data.events.map(toUI))
+    }
+  }, [toUI])
+
   useEffect(() => {
     if (status === "authenticated") {
       loadEvents().catch(console.error)
+      loadJoinedEvents().catch(console.error)
     }
-  }, [status, loadEvents])
+  }, [status, loadEvents, loadJoinedEvents])
 
   /** ----- Form handlers ----- */
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -242,6 +264,17 @@ const Page = () => {
     }
   }
 
+  const handleLeaveEvent = async (eventId: string) => {
+    if (!confirm("Are you sure you want to leave this event?")) return
+    try {
+      await axios.post("/api/events/leave", { eventId }, axiosConfig)
+      await loadJoinedEvents() // refresh joined events list
+    } catch (err) {
+      console.error(err)
+      alert("Failed to leave event.")
+    }
+  }
+
   const cancelEdit = () => {
     setEditingEvent(null)
     resetForm()
@@ -324,6 +357,14 @@ const Page = () => {
             }`}
           >
             Manage Events
+          </button>
+          <button
+            onClick={() => setActiveTab("joined")}
+            className={`px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
+              activeTab === "joined" ? "bg-white text-purple-600 shadow-lg" : "bg-white/20 text-white hover:bg-white/30"
+            }`}
+          >
+            Joined Events
           </button>
         </div>
 
@@ -599,7 +640,6 @@ const Page = () => {
                         </div>
                       </div>
                     </Link>
-                    {/* </CHANGE> */}
 
                     <div className="mt-6 flex space-x-3">
                       <button
@@ -613,6 +653,86 @@ const Page = () => {
                         className="flex-1 bg-red-500/80 text-white py-2 rounded-lg hover:bg-red-600/80 transition-all duration-200"
                       >
                         Delete
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === "joined" && (
+          <div className="space-y-6">
+            <h2 className="text-2xl font-bold text-white mb-6">Events You have Joined</h2>
+
+            {joinedEvents.length === 0 ? (
+              <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-8 text-center">
+                <p className="text-white text-lg">You have not joined any events yet.</p>
+                <p className="text-white/70 text-sm mt-2">Browse events to find ones you would like to attend!</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {joinedEvents.map((event) => (
+                  <div key={event.id} className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 shadow-xl">
+                    <div className="flex justify-between items-start mb-4">
+                      <div className="flex flex-col gap-2">
+                        <span className="bg-blue-500/80 text-white px-3 py-1 rounded-full text-sm font-medium">
+                          {event.category}
+                        </span>
+                        <span
+                          className={`px-3 py-1 rounded-full text-sm font-medium ${
+                            event.inviteOnly ? "bg-purple-500/80 text-white" : "bg-green-500/80 text-white"
+                          }`}
+                        >
+                          {event.inviteOnly ? "🔒 Invite Only" : "🌍 Everyone"}
+                        </span>
+                      </div>
+                    </div>
+
+                    <Link href={`/events/${event.id}`} className="block">
+                      <h3 className="text-xl font-bold text-white mb-2 hover:text-blue-200 transition-colors">
+                        {event.title}
+                      </h3>
+                      {event.hostName && <p className="text-white/60 text-sm mb-2">Hosted by {event.hostName}</p>}
+                      <p className="text-white/80 mb-4 line-clamp-2">{event.description}</p>
+
+                      <div className="space-y-2 text-white/90">
+                        <div className="flex items-center">
+                          <span className="mr-2">📅</span>
+                          <span>
+                            {new Date(`${event.date}T00:00:00`).toLocaleDateString()}
+                            {event.endDate && event.endDate !== event.date
+                              ? ` → ${new Date(`${event.endDate}T00:00:00`).toLocaleDateString()}`
+                              : ""}
+                          </span>
+                        </div>
+                        <div className="flex items-center">
+                          <span className="mr-2">🕒</span>
+                          <span>
+                            {to12h(event.time)}
+                            {event.endTime ? ` - ${to12h(event.endTime)}` : ""}
+                          </span>
+                        </div>
+                        <div className="flex items-center">
+                          <span className="mr-2">📍</span>
+                          <span>{event.location}</span>
+                        </div>
+                        <div className="flex items-center">
+                          <span className="mr-2">👥</span>
+                          <span>
+                            {event.attendees}/{event.maxAttendees} attendees
+                          </span>
+                        </div>
+                      </div>
+                    </Link>
+
+                    <div className="mt-6">
+                      <button
+                        onClick={() => handleLeaveEvent(event.id)}
+                        className="w-full bg-red-500/80 text-white py-2 rounded-lg hover:bg-red-600/80 transition-all duration-200"
+                      >
+                        Leave Event
                       </button>
                     </div>
                   </div>
