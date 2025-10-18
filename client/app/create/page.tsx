@@ -67,6 +67,7 @@ type EventFromServer = {
   maxAttendees?: number
   inviteOnly: boolean
   hostName?: string // Added for joined events
+  status?: "INVITED" | "ATTENDING"
 }
 
 const Page = () => {
@@ -140,17 +141,12 @@ const Page = () => {
   }, [toUI])
 
   const loadJoinedEvents = useCallback(async () => {
-    try {
-      await fetch("/api/set-token", { method: "GET", credentials: "include" })
-    } catch {
-      /* non-fatal */
-    }
+    try { await fetch("/api/set-token", { method: "GET", credentials: "include" }) } catch {}
     const token = getCookie("token")
-    const cfg = {
-      withCredentials: true,
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    }
-    const res = await axios.get("/api/users/joined-events", cfg)
+    const cfg = { withCredentials: true, headers: token ? { Authorization: `Bearer ${token}` } : {} }
+
+    // 👇 only ATTENDING
+    const res = await axios.get("/api/users/create/joined?onlyAttending=1", cfg)
     if (res.data?.ok && Array.isArray(res.data.events)) {
       setJoinedEvents(res.data.events.map(toUI))
     }
@@ -267,8 +263,11 @@ const Page = () => {
   const handleLeaveEvent = async (eventId: string) => {
     if (!confirm("Are you sure you want to leave this event?")) return
     try {
-      await axios.post("/api/events/leave", { eventId }, axiosConfig)
-      await loadJoinedEvents() // refresh joined events list
+      await axios.delete("/api/users/create/joined", {
+        ...axiosConfig,
+        data: { eventId }, // axios lets you send a body with DELETE
+      })
+      await loadJoinedEvents()
     } catch (err) {
       console.error(err)
       alert("Failed to leave event.")
