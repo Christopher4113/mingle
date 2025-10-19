@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react"
 import { useSession, signOut } from "next-auth/react"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
 
 function timeAgo(date: string | Date) {
   const d = typeof date === "string" ? new Date(date) : date
@@ -86,7 +85,6 @@ type NotificationsResponse = {
 }
 
 const Page = () => {
-  const router = useRouter()
   const { data: session, status } = useSession()
   const [selectedCategory, setSelectedCategory] = useState<string>("All")
   const [notifications, setNotifications] = useState<Notif[]>([])
