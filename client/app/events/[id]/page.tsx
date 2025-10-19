@@ -39,9 +39,13 @@ function getCookie(name: string) {
   const m = document.cookie.match(new RegExp("(^|;\\s*)" + name + "=([^;]*)"))
   return m ? decodeURIComponent(m[2]) : undefined
 }
-function authHeaders() {
-  const token = getCookie("token");
-  return token ? { Authorization: `Bearer ${token}` } : {};
+function authHeaders(): Record<string, string> {
+  const token = getCookie("token")
+  if (!token) return {}
+  return { Authorization: `Bearer ${token}` }
+}
+function jsonAuthHeaders(): Record<string, string> {
+  return { "Content-Type": "application/json", ...authHeaders() }
 }
 
 function to12h(hhmm: string) {
@@ -51,6 +55,7 @@ function to12h(hhmm: string) {
   h = h % 12 || 12
   return `${h}:${m} ${ampm}`
 }
+
 
 
 
@@ -119,6 +124,7 @@ export default function EventDetailPage() {
   const [invitedPeople, setInvitedPeople] = useState<Person[]>([])
   const [aboutText, setAboutText] = useState("")
   const [isEditingAbout, setIsEditingAbout] = useState(false)
+  const [actioningId, setActioningId] = useState<string | null>(null);
 
   const loadEvent = useCallback(async () => {
     try {
@@ -369,6 +375,42 @@ export default function EventDetailPage() {
     ] satisfies Person[];
     setSearchResults(mockRecommendations);
   }
+
+  async function handleApprove(personId: string) {
+  try {
+    setActioningId(personId);
+    await fetch("/api/set-token", { method: "GET", credentials: "include" });
+    const res = await fetch(`/api/users/events/${params.id}/join`, {
+      method: "PATCH",
+      credentials: "include",
+      headers: jsonAuthHeaders(),
+      body: JSON.stringify({ userId: personId, action: "approve" }),
+    });
+    const data = await res.json();
+    if (!data?.ok) return alert(data?.error ?? "Approve failed");
+    await fetchInvited(); // refresh list/status pills
+  } finally {
+    setActioningId(null);
+  }
+}
+
+async function handleDecline(personId: string) {
+  try {
+    setActioningId(personId);
+    await fetch("/api/set-token", { method: "GET", credentials: "include" });
+    const res = await fetch(`/api/users/events/${params.id}/join`, {
+      method: "PATCH",
+      credentials: "include",
+      headers: jsonAuthHeaders(),
+      body: JSON.stringify({ userId: personId, action: "decline" }),
+    });
+    const data = await res.json();
+    if (!data?.ok) return alert(data?.error ?? "Decline failed");
+    await fetchInvited();
+  } finally {
+    setActioningId(null);
+  }
+}
 
   if (status === "loading" || loading) {
     return (
@@ -625,40 +667,82 @@ export default function EventDetailPage() {
           </h2>
 
           {invitedPeople.length === 0 ? (
-            <p className="text-white/60 text-center py-8">No one invited yet. Search and invite people above!</p>
+            <p className="text-white/60 text-center py-8">
+              No one invited yet. Search and invite people above!
+            </p>
           ) : (
             <div className="space-y-2">
-              {invitedPeople.map((person) => (
-                <div key={person.id} className="flex items-center justify-between bg-white/5 rounded-lg p-3">
-                  <div className="flex items-center gap-3">
-                    <Avatar src={person.image ?? undefined} alt={person.name} />
-                    <div>
-                      <p className="text-white font-medium">
-                        {person.name}
-                        {person.username ? (
-                          <span className="text-white/60 text-sm ml-2">@{person.username}</span>
+              {invitedPeople.map((person) => {
+                const pending = person.status === "invited";
+                return (
+                  <div
+                    key={person.id}
+                    className="flex items-center justify-between bg-white/5 rounded-lg p-3"
+                  >
+                    <div className="flex items-center gap-3">
+                      <Avatar src={person.image ?? undefined} alt={person.name} />
+                      <div>
+                        <p className="text-white font-medium">
+                          {person.name}
+                          {person.username ? (
+                            <span className="text-white/60 text-sm ml-2">@{person.username}</span>
+                          ) : null}
+                        </p>
+                        <p className="text-white/60 text-xs">{person.email}</p>
+                        {person.location ? (
+                          <p className="text-white/60 text-xs">📍 {person.location}</p>
                         ) : null}
-                      </p>
-                      <p className="text-white/60 text-xs">{person.email}</p>
-                      {person.location ? (
-                        <p className="text-white/60 text-xs">📍 {person.location}</p>
-                      ) : null}
-                      <span className="inline-block mt-1 px-2 py-1 bg-blue-500/50 text-white text-[10px] rounded">
-                        {person.status}
-                      </span>
+
+                        {/* Status pill */}
+                        <span
+                          className={[
+                            "inline-block mt-1 px-2 py-1 text-white text-[10px] rounded",
+                            pending ? "bg-yellow-500/70" : "bg-green-600/70",
+                          ].join(" ")}
+                        >
+                          {pending ? "invited (pending approval)" : "attending"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-2">
+                      {pending ? (
+                        <>
+                          <Button
+                            size="sm"
+                            disabled={actioningId === person.id}
+                            className="bg-green-500/80 text-white hover:bg-green-600"
+                            onClick={() => handleApprove(person.id)}
+                          >
+                            {actioningId === person.id ? "Approving..." : "Approve"}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            disabled={actioningId === person.id}
+                            className="bg-red-500/80 text-white hover:bg-red-600"
+                            onClick={() => handleDecline(person.id)}
+                          >
+                            {actioningId === person.id ? "Declining..." : "Decline"}
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          onClick={() => handleKickOut(person.id)}
+                          size="sm"
+                          variant="destructive"
+                          className="bg-red-500/80 text-white hover:bg-red-600"
+                          disabled={actioningId === person.id}
+                        >
+                          <UserMinus className="w-4 h-4 mr-2" />
+                          {actioningId === person.id ? "Removing..." : "Remove"}
+                        </Button>
+                      )}
                     </div>
                   </div>
-                  <Button
-                    onClick={() => handleKickOut(person.id)}
-                    size="sm"
-                    variant="destructive"
-                    className="bg-red-500/80 text-white hover:bg-red-600"
-                  >
-                    <UserMinus className="w-4 h-4 mr-2" />
-                    Remove
-                  </Button>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </Card>

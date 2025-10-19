@@ -30,13 +30,36 @@ function jsonAuthHeaders(): HeadersInit {
   return { "Content-Type": "application/json", ...authHeaders() }
 }
 
-const sampleEvents = [
-  { id: 1, title: "Professional Networking Mixer", date: "Dec 15, 2024", time: "6:00 PM", location: "Downtown Convention Center", attendees: 45, category: "Networking" },
-  { id: 2, title: "Creative Professionals Meetup", date: "Dec 18, 2024", time: "7:30 PM", location: "Art District Gallery", attendees: 32, category: "Creative" },
-  { id: 3, title: "Social Impact Happy Hour", date: "Dec 20, 2024", time: "5:30 PM", location: "Community Center", attendees: 28, category: "Social" },
-  { id: 4, title: "AI & Machine Learning Workshop", date: "Dec 22, 2024", time: "2:00 PM", location: "Tech Campus Building A", attendees: 67, category: "Learning" },
-  { id: 5, title: "Mindfulness & Wellness Retreat", date: "Dec 25, 2024", time: "10:00 AM", location: "Wellness Center", attendees: 24, category: "Wellness" },
-]
+function fmtDateTime(iso: string) {
+  const d = new Date(iso)
+  return d.toLocaleString(undefined, {
+    month: "short",
+    day: "2-digit",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  })
+}
+function pct(a: number, b: number) {
+  if (!b) return 0
+  return Math.min(100, Math.max(0, (a / b) * 100))
+}
+
+type DiscoverEvent = {
+  id: string;
+  title: string;
+  description: string;
+  startsAt: string;
+  endsAt: string;
+  location: string;
+  category: string;
+  attendees: number;
+  maxAttendees: number;
+  inviteOnly: boolean;
+  hostName: string;
+  isFull: boolean;
+};
+
 
 type NotifType =
   | "EVENT_INVITE"
@@ -68,6 +91,7 @@ const Page = () => {
   const [selectedCategory, setSelectedCategory] = useState<string>("All")
   const [notifications, setNotifications] = useState<Notif[]>([])
   const [showNotifications, setShowNotifications] = useState(false)
+  const [discover, setDiscover] = useState<DiscoverEvent[]>([]);
 
   const loadNotifications = useCallback(async () => {
     await fetch("/api/set-token", { method: "GET", credentials: "include" })
@@ -83,12 +107,21 @@ const Page = () => {
     }
   }, [])
 
+  const loadDiscover = useCallback(async () => {
+    await fetch("/api/set-token", { method: "GET", credentials: "include" });
+    const res = await fetch("/api/users/menu", { credentials: "include", headers: authHeaders() });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data?.ok && Array.isArray(data.events)) setDiscover(data.events);
+  }, []);
+
   useEffect(() => {
     if (status === "authenticated") {
       void fetch("/api/set-token", { method: "GET", credentials: "include" })
       void loadNotifications()
+      void loadDiscover();
     }
-  }, [status, loadNotifications])
+  }, [status, loadNotifications, loadDiscover])
 
   const markAllAsRead = async () => {
     const toMark = notifications.filter((n) => !n.read)
@@ -135,7 +168,25 @@ const Page = () => {
     await loadNotifications()
   }
 
+
   const unreadCount = notifications.filter((n) => !n.read).length
+
+  async function handleJoin(eventId: string) {
+    await fetch("/api/set-token", { method: "GET", credentials: "include" });
+    const res = await fetch(`/api/users/events/${eventId}/join`, {
+      method: "POST",
+      credentials: "include",
+      headers: jsonAuthHeaders(),
+    });
+    const data = await res.json();
+    if (!data?.ok) {
+      alert(data?.error ?? "Unable to join");
+      return;
+    }
+    // Soft refresh list so full/attendee counts update or the event disappears if you joined
+    await loadDiscover();
+    alert(data.status === "ATTENDING" ? "You joined the event" : "Request sent to the host");
+  }
 
   if (status === "loading") {
     return (
@@ -171,8 +222,7 @@ const Page = () => {
     )
   }
 
-  const filteredEvents =
-    selectedCategory === "All" ? sampleEvents : sampleEvents.filter((event) => event.category === selectedCategory)
+
 
   return (
     <div className="min-h-screen" style={{ background: "linear-gradient(135deg, #4F46E5 0%, #EC4899 100%)" }}>
@@ -342,35 +392,78 @@ const Page = () => {
           </div>
 
           <div className="grid md:grid-cols-2 gap-4">
-            {filteredEvents.map((event) => (
+            {(selectedCategory === "All"
+              ? discover
+              : discover.filter(e => e.category === selectedCategory)
+            ).map((event) => (
               <div
                 key={event.id}
-                className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-4 hover:bg-white/20 transition-all duration-300 cursor-pointer group"
-                onClick={() => router.push(`/events/${event.id}`)}
+                className="group relative overflow-hidden rounded-2xl border border-white/20 bg-gradient-to-br from-white/10 to-white/5 p-4 shadow-[0_10px_40px_-10px_rgba(0,0,0,0.4)] backdrop-blur-md transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_16px_60px_-12px_rgba(0,0,0,0.55)]"
               >
-                <div className="flex justify-between items-start mb-3">
-                  <h3 className="text-lg font-semibold text-white group-hover:text-white/90">{event.title}</h3>
-                  <span className="text-xs bg-white/20 text-white px-2 py-1 rounded-full">{event.category}</span>
-                </div>
-                <div className="space-y-2 text-white/80 text-sm">
-                  <div className="flex items-center gap-2">
-                    <span>📅</span>
-                    <span>
-                      {event.date} at {event.time}
+                {/* subtle gradient glow */}
+                <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(600px_circle_at_0%_0%,rgba(255,255,255,0.08),transparent_40%),radial-gradient(600px_circle_at_100%_0%,rgba(255,255,255,0.06),transparent_40%)]" />
+
+                <div className="relative z-10">
+                  {/* header */}
+                  <div className="mb-3 flex items-start justify-between gap-3">
+                    <h3 className="line-clamp-1 text-xl font-semibold text-white/95">{event.title}</h3>
+                    <span className="shrink-0 rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-xs text-white/80">
+                      {event.category}
                     </span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span>📍</span>
-                    <span>{event.location}</span>
+
+                  {/* meta */}
+                  <div className="mb-3 space-y-2 text-sm text-white/85">
+                    <div className="flex items-center gap-2">
+                      <span>📅</span>
+                      <span className="line-clamp-1">{fmtDateTime(event.startsAt)}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span>📍</span>
+                      <span className="line-clamp-1">{event.location}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span>👥</span>
+                      <span>
+                        {event.attendees} / {event.maxAttendees} attending
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span>👤</span>
+                      <span className="line-clamp-1">Host: {event.hostName}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span>{event.inviteOnly ? "🔒" : "🌍"}</span>
+                      <span>{event.inviteOnly ? "Invite Only" : "Open to Everyone"}</span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span>👥</span>
-                    <span>{event.attendees} attending</span>
+
+                  {/* capacity bar */}
+                  <div className="mb-4">
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-white/15">
+                      <div
+                        className="h-full rounded-full bg-white/80 transition-[width] duration-500 group-hover:bg-white"
+                        style={{ width: `${pct(event.attendees, event.maxAttendees)}%` }}
+                      />
+                    </div>
+                    <div className="mt-1 text-right text-[11px] uppercase tracking-wide text-white/50">
+                      {pct(event.attendees, event.maxAttendees)}% filled
+                    </div>
                   </div>
+
+                  {/* action */}
+                  <Button
+                    disabled={event.isFull}
+                    onClick={() => handleJoin(event.id)}
+                    className={[
+                      "w-full rounded-xl border border-white/30 bg-white/15 px-4 py-2 font-semibold text-white",
+                      "transition-all duration-200 hover:bg-white/25 hover:shadow-[inset_0_0_0_999px_rgba(255,255,255,0.04)]",
+                      event.isFull ? "cursor-not-allowed opacity-60" : "",
+                    ].join(" ")}
+                  >
+                    {event.isFull ? "Event Full" : event.inviteOnly ? "Request to Join" : "Join Event"}
+                  </Button>
                 </div>
-                <Button className="w-full mt-4 bg-white/20 backdrop-blur-sm border border-white/30 text-white hover:bg-white/30 transition-all duration-300">
-                  Join Event
-                </Button>
               </div>
             ))}
           </div>
