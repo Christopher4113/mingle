@@ -39,7 +39,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         where: { eventId_userId: { eventId: id, userId } },
         select: { status: true },
       });
-
+      const actor = await db.user.findUnique({
+        where: { id: userId },
+        select: { username: true, name: true, email: true },
+      });
+      const actorUsername = actor?.username ?? actor?.name ?? "Someone";
       if (ev.inviteOnly) {
         // Join request: create or set status to INVITED
         await tx.eventAttendee.upsert({
@@ -54,8 +58,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
             userId: ev.userId,
             type: "EVENT_UPDATE",
             title: "Join Request",
-            message: "Someone requested to join your invite only event.",
-            data: { eventId: id, eventTitle: ev.title },
+            message: `${actorUsername} requested to join your invite only event.`,
+            data: { eventId: id, eventTitle: ev.title, actorId: userId, actorUsername },
           },
         });
 
@@ -64,7 +68,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
             to: ev.creator.email,
             notificationId: notif.id,
             title: "Join Request",
-            message: `A user requested to join "${ev.title}".`,
+            message: notif.message,
           }).catch(console.error);
         }
 
@@ -93,8 +97,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
             userId: ev.userId,
             type: "EVENT_JOINED",
             title: "New Attendee",
-            message: "Someone joined your event.",
-            data: { eventId: id, eventTitle: ev.title },
+            message: `${actorUsername} joined your event.`,
+            data: { eventId: id, eventTitle: ev.title, actorId: userId, actorUsername },
           },
         });
 
@@ -103,7 +107,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
             to: ev.creator.email,
             notificationId: notif.id,
             title: "New Attendee",
-            message: `Someone joined "${ev.title}".`,
+            message: notif.message,
           }).catch(console.error);
         }
       }
@@ -136,11 +140,21 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (!ev) return bad("Event not found", 404);
     if (ev.userId !== callerId) return bad("Only the creator can manage requests", 403);
 
+    
+
     return NextResponse.json(await db.$transaction(async (tx) => {
       const attendee = await tx.eventAttendee.findUnique({
         where: { eventId_userId: { eventId: id, userId } },
         select: { status: true },
       });
+
+      const creator = await tx.user.findUnique({
+        where: { id: ev.userId },
+        select: { username: true, name: true, email: true },
+      });
+      const creatorUsername = creator?.username ?? creator?.name ?? "Host";
+
+
       if (!attendee) return { ok: false, error: "No request found" };
 
       if (action === "approve") {
@@ -162,8 +176,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
             userId,
             type: "EVENT_UPDATE",
             title: "Request Approved",
-            message: `You have been accepted to "${ev.title}".`,
-            data: { eventId: id, eventTitle: ev.title },
+            message: `You have been accepted to "${ev.title}" by ${creatorUsername}.`,
+            data: { eventId: id, eventTitle: ev.title, creatorId: ev.userId, creatorUsername},
           },
         });
 
@@ -173,7 +187,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
             to: user.email,
             notificationId: notif.id,
             title: "Request Approved",
-            message: `You have been accepted to "${ev.title}".`,
+            message: notif.message,
           }).catch(console.error);
         }
 
@@ -190,8 +204,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
           userId,
           type: "EVENT_UPDATE",
           title: "Request Declined",
-          message: `Your request to join "${ev.title}" was declined.`,
-          data: { eventId: id, eventTitle: ev.title },
+          message: `Your request to join "${ev.title}" was declined by ${creatorUsername}.`,
+          data: { eventId: id, eventTitle: ev.title, creatorId: ev.userId, creatorUsername},
         },
       });
 
@@ -201,7 +215,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
           to: user.email,
           notificationId: notif.id,
           title: "Request Declined",
-          message: `Your request to join "${ev.title}" was declined.`,
+          message: notif.message,
         }).catch(console.error);
       }
 

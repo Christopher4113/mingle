@@ -73,7 +73,14 @@ type Notif = {
   type: NotifType
   title: string
   message: string
-  data?: { eventId?: string; eventTitle?: string } | null
+  data?: {
+    eventId?: string
+    eventTitle?: string
+    actorId?: string
+    actorUsername?: string
+    creatorId?: string
+    creatorUsername?: string
+  } | null
   read: boolean
   createdAt: string
   icon: string
@@ -93,17 +100,17 @@ const Page = () => {
 
   const loadNotifications = useCallback(async () => {
     await fetch("/api/set-token", { method: "GET", credentials: "include" })
-    const res = await fetch("/api/users/notifications", {
+    const res = await fetch("/api/users/notifications?onlyUnread=1", {
       credentials: "include",
       headers: authHeaders(),
     })
     if (!res.ok) return
     const data: NotificationsResponse = await res.json()
     if (data?.ok && Array.isArray(data.notifications)) {
-      // keep ISO string for timeAgo()
       setNotifications(data.notifications)
     }
   }, [])
+
 
   const loadDiscover = useCallback(async () => {
     await fetch("/api/set-token", { method: "GET", credentials: "include" });
@@ -121,30 +128,46 @@ const Page = () => {
     }
   }, [status, loadNotifications, loadDiscover])
 
-  const markAllAsRead = async () => {
-    const toMark = notifications.filter((n) => !n.read)
-    await Promise.all(
-      toMark.map((n) =>
-        fetch("/api/users/notifications", {
-          method: "PATCH",
-          credentials: "include",
-          headers: jsonAuthHeaders(),
-          body: JSON.stringify({ id: n.id, action: "read" }),
-        })
-      )
-    )
-    await loadNotifications()
+  
+  const markAsRead = async (id: string) => {
+    // optimistic update
+    setNotifications((prev) => prev.filter((n) => n.id !== id))
+    try {
+      const res = await fetch("/api/users/notifications", {
+        method: "PATCH",
+        credentials: "include",
+        headers: jsonAuthHeaders(),
+        body: JSON.stringify({ id, action: "read" }),
+      })
+      if (!res.ok) throw new Error("Failed to mark read")
+      // no refetch needed because we already removed it
+    } catch  {
+      // rollback if something went wrong
+      await loadNotifications()
+    }
   }
 
-  const markAsRead = async (id: string) => {
-    await fetch("/api/users/notifications", {
-      method: "PATCH",
-      credentials: "include",
-      headers: jsonAuthHeaders(),
-      body: JSON.stringify({ id, action: "read" }),
-    })
-    await loadNotifications()
+  const markAllAsRead = async () => {
+    const toMark = notifications.map((n) => n.id)
+    // optimistic clear
+    setNotifications([])
+    try {
+      await Promise.all(
+        toMark.map((id) =>
+          fetch("/api/users/notifications", {
+            method: "PATCH",
+            credentials: "include",
+            headers: jsonAuthHeaders(),
+            body: JSON.stringify({ id, action: "read" }),
+          })
+        )
+      )
+    } catch {
+      await loadNotifications()
+    }
   }
+  
+
 
   const handleAcceptInvite = async (id: string) => {
     await fetch("/api/users/notifications", {
@@ -282,61 +305,86 @@ const Page = () => {
             </div>
 
             <div className="space-y-3 max-h-[500px] overflow-y-auto">
-              {notifications.map((notification) => (
-                <div
-                  key={notification.id}
-                  onClick={() => markAsRead(notification.id)}
-                  className={`p-4 rounded-xl border transition-all duration-300 cursor-pointer ${
-                    notification.read
-                      ? "bg-white/5 border-white/10 hover:bg-white/10"
-                      : "bg-white/15 border-white/30 hover:bg-white/20"
-                  }`}
-                >
-                  <div className="flex items-start gap-4">
-                    <div className="text-3xl flex-shrink-0">{notification.icon}</div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-2 mb-1">
-                        <h3 className={`font-semibold ${notification.read ? "text-white/80" : "text-white"}`}>
-                          {notification.title}
-                        </h3>
-                        {!notification.read && <span className="w-2 h-2 bg-blue-400 rounded-full flex-shrink-0 mt-2" />}
-                      </div>
+              {notifications.map((n) => {
+                // Pull structured usernames if backend added them to `data`
+                const actor = n.data?.actorUsername;       // the person who joined / requested
+                const creatorU = n.data?.creatorUsername;  // the host who approved/declined
 
-                      <p className={`text-sm mb-2 ${notification.read ? "text-white/60" : "text-white/80"}`}>
-                        {notification.message}
-                      </p>
+                // Prefer structured usernames to craft a clearer line; fall back to original message
+                let displayMsg = n.message;
+                if (n.type === "EVENT_JOINED" && actor) {
+                  displayMsg = `${actor} joined your event.`;
+                } else if (n.title === "Join Request" && actor) {
+                  displayMsg = `${actor} requested to join your invite only event.`;
+                } else if (n.title === "Request Approved" && creatorU) {
+                  displayMsg = `You have been accepted to "${n.data?.eventTitle ?? "the event"}" by ${creatorU}.`;
+                } else if (n.title === "Request Declined" && creatorU) {
+                  displayMsg = `Your request to join "${n.data?.eventTitle ?? "the event"}" was declined by ${creatorU}.`;
+                }
 
-                      {notification.type === "EVENT_INVITE" && (
-                        <div className="flex gap-2 mb-2">
-                          <Button
-                            size="sm"
-                            className="bg-green-500/80 text-white hover:bg-green-600"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              void handleAcceptInvite(notification.id)
-                            }}
-                          >
-                            Accept
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            className="bg-red-500/80 text-white hover:bg-red-600"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              void handleDeclineInvite(notification.id)
-                            }}
-                          >
-                            Decline
-                          </Button>
+                return (
+                  <div
+                    key={n.id}
+                    onClick={() => markAsRead(n.id)}
+                    className={`p-4 rounded-xl border transition-all duration-300 cursor-pointer ${
+                      n.read
+                        ? "bg-white/5 border-white/10 hover:bg-white/10"
+                        : "bg-white/15 border-white/30 hover:bg-white/20"
+                    }`}
+                  >
+                    <div className="flex items-start gap-4">
+                      <div className="text-3xl flex-shrink-0">{n.icon}</div>
+                      <div className="min-w-0 flex-1">
+                        <div className="mb-1 flex items-start justify-between gap-2">
+                          <h3 className={`font-semibold ${n.read ? "text-white/80" : "text-white"}`}>
+                            {n.title}
+                            {/* username chips beside title when we know who */}
+                            {n.title === "Join Request" && actor ? (
+                              <span className="ml-2 rounded-full bg-white/10 px-2 py-0.5 text-xs text-white/70">@{actor}</span>
+                            ) : null}
+                            {(n.title === "Request Approved" || n.title === "Request Declined") && creatorU ? (
+                              <span className="ml-2 rounded-full bg-white/10 px-2 py-0.5 text-xs text-white/70">@{creatorU}</span>
+                            ) : null}
+                          </h3>
+                          {!n.read && <span className="mt-2 h-2 w-2 flex-shrink-0 rounded-full bg-blue-400" />}
                         </div>
-                      )}
 
-                      <p className="text-xs text-white/50">{timeAgo(notification.createdAt)}</p>
+                        <p className={`mb-2 text-sm ${n.read ? "text-white/60" : "text-white/80"}`}>
+                          {displayMsg}
+                        </p>
+
+                        {n.type === "EVENT_INVITE" && (
+                          <div className="mb-2 flex gap-2">
+                            <Button
+                              size="sm"
+                              className="bg-green-500/80 text-white hover:bg-green-600"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void handleAcceptInvite(n.id);
+                              }}
+                            >
+                              Accept
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              className="bg-red-500/80 text-white hover:bg-red-600"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void handleDeclineInvite(n.id);
+                              }}
+                            >
+                              Decline
+                            </Button>
+                          </div>
+                        )}
+
+                        <p className="text-xs text-white/50">{timeAgo(n.createdAt)}</p>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}

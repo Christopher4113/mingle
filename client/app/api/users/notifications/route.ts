@@ -11,13 +11,15 @@ export async function GET(req: NextRequest) {
     const userId = getDataFromToken(req);
     if (!userId) return bad("Unauthorized", 401);
 
+    const { searchParams } = new URL(req.url);
+    const onlyUnread = searchParams.get("onlyUnread") === "1";
+
     const rows = await db.notification.findMany({
-      where: { userId },
+      where: { userId, ...(onlyUnread ? { read: false } : {}) },
       orderBy: { createdAt: "desc" },
       take: 50,
     });
 
-    // Map a tiny icon client can show (you can also move this client-side)
     const iconFor: Record<string, string> = {
       EVENT_INVITE: "✉️",
       EVENT_UPDATE: "📍",
@@ -45,6 +47,7 @@ export async function GET(req: NextRequest) {
     return bad(msg);
   }
 }
+
 
 /**
  * PATCH — actions on a notification
