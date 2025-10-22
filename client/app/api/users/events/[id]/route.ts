@@ -1,4 +1,5 @@
 // app/api/users/events/[id]/route.ts  (and the /profile one too)
+"use server";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getDataFromToken } from "@/helpers/getDataFromToken";

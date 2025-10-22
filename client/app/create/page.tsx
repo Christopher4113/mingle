@@ -689,7 +689,7 @@ const Page = () => {
                       </div>
                     </div>
 
-                    <Link href={`/events/${event.id}`} className="block">
+                    <Link href={`/meetup/${event.id}`} className="block">
                       <h3 className="text-xl font-bold text-white mb-2 hover:text-blue-200 transition-colors">
                         {event.title}
                       </h3>

@@ -1,4 +1,5 @@
 // app/api/users/create/joined/route.ts
+"use server";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getDataFromToken } from "@/helpers/getDataFromToken";

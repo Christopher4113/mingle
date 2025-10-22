@@ -40,6 +40,7 @@ export const config = {
         '/saved',
         '/profile',
         '/events/:path*',
-        '/notifications/:path*',      
+        '/notifications/:path*',
+        '/meetings/:path*',      
     ]
 };
