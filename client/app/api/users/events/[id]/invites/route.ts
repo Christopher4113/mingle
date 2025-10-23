@@ -72,6 +72,8 @@ export async function GET(req: NextRequest, ctx: Ctx) {
           bio: true,
           location: true,
           profileImageUrl: true,
+          interests: true,
+          connections: true,
         },
         orderBy: { createdAt: "desc" },
         take,
@@ -88,6 +90,8 @@ export async function GET(req: NextRequest, ctx: Ctx) {
           location: u.location ?? "",
           image: u.profileImageUrl ?? null,
           status: "none" as const,
+          interests: u.interests ?? [],
+          connections: u.connections ?? 0,
         })),
       });
     }
@@ -99,6 +103,7 @@ export async function GET(req: NextRequest, ctx: Ctx) {
         user: { select: {
           id: true, username: true, name: true, email: true,
           bio: true, location: true, profileImageUrl: true,
+          interests: true, connections: true,
         }},
       },
       orderBy: { createdAt: "desc" },
@@ -115,6 +120,8 @@ export async function GET(req: NextRequest, ctx: Ctx) {
         location: r.user.location ?? "",
         image: r.user.profileImageUrl ?? null,
         status: r.status === "ATTENDING" ? "attending" : "invited",
+        interests: r.user.interests ?? [],
+        connections: r.user.connections ?? 0,
       })),
     });
   } catch (err: unknown) {
@@ -228,6 +235,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
         user: { select: {
           id: true, username: true, name: true, email: true,
           bio: true, location: true, profileImageUrl: true,
+          interests: true, connections: true,
         }},
       },
       orderBy: { createdAt: "desc" },
@@ -244,6 +252,8 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
         location: r.user.location ?? "",
         image: r.user.profileImageUrl ?? null,
         status: (r.status === "ATTENDING" ? "attending" : "invited") as 'attending' | 'invited',
+        interests: r.user.interests ?? [],
+        connections: r.user.connections ?? 0,
       })),
     });
   } catch (err: unknown) {

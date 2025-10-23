@@ -97,6 +97,8 @@ type Person = {
   bio?: string;
   location?: string;
   image?: string | null;
+  interests?: string[]
+  connections?: number
 }
 type ApiPerson = {
   id: string;
@@ -107,6 +109,8 @@ type ApiPerson = {
   location?: string | null;
   image?: string | null;
   status: Status;
+  interests?: string[]
+  connections?: number
 };
 
 type InvitedResp = { ok: boolean; invited: ApiPerson[] };
@@ -125,6 +129,7 @@ export default function EventDetailPage() {
   const [aboutText, setAboutText] = useState("")
   const [isEditingAbout, setIsEditingAbout] = useState(false)
   const [actioningId, setActioningId] = useState<string | null>(null);
+  const [openProfile, setOpenProfile] = useState<Person | null>(null)
 
   const loadEvent = useCallback(async () => {
     try {
@@ -193,6 +198,8 @@ export default function EventDetailPage() {
         bio: u.bio ?? "",
         location: u.location ?? "",
         image: u.image ?? null,
+        interests: u.interests ?? [],     
+        connections: u.connections ?? 0,
       }));
       setInvitedPeople(invited);
     }
@@ -218,6 +225,8 @@ export default function EventDetailPage() {
           bio: u.bio ?? "",
           location: u.location ?? "",
           image: u.image ?? null,
+          interests: u.interests ?? [],       
+          connections: u.connections ?? 0,
         }));
         setSearchResults(results);
       }
@@ -267,6 +276,8 @@ export default function EventDetailPage() {
         bio: u.bio ?? "",
         location: u.location ?? "",
         image: u.image ?? null,
+        interests: u.interests ?? [],       
+        connections: u.connections ?? 0,
       }));
       setSearchResults(results);
     }
@@ -311,6 +322,8 @@ export default function EventDetailPage() {
         bio: u.bio ?? "",
         location: u.location ?? "",
         image: u.image ?? null,
+        interests: u.interests ?? [],       
+        connections: u.connections ?? 0,
       }));
       setInvitedPeople(invited);
     }
@@ -631,7 +644,14 @@ async function handleDecline(personId: string) {
               {searchResults.map((person) => (
                 <div key={person.id} className="flex items-center justify-between bg-white/5 rounded-lg p-3">
                   <div className="flex items-center gap-3">
-                    <Avatar src={person.image ?? undefined} alt={person.name} />
+                    <button
+                      type="button"
+                      onClick={() => setOpenProfile(person)}
+                      className="rounded-full ring-2 ring-white/10 hover:ring-white/30 focus:outline-none"
+                      title="View profile"
+                    >
+                      <Avatar src={person.image ?? undefined} alt={person.name} />
+                    </button>
                     <div>
                       <p className="text-white font-medium">
                         {person.name}
@@ -680,7 +700,14 @@ async function handleDecline(personId: string) {
                     className="flex items-center justify-between bg-white/5 rounded-lg p-3"
                   >
                     <div className="flex items-center gap-3">
-                      <Avatar src={person.image ?? undefined} alt={person.name} />
+                       <button
+                          type="button"
+                          onClick={() => setOpenProfile(person)}
+                          className="rounded-full ring-2 ring-white/10 hover:ring-white/30 focus:outline-none"
+                          title="View profile"
+                        >
+                          <Avatar src={person.image ?? undefined} alt={person.name} />
+                        </button>
                       <div>
                         <p className="text-white font-medium">
                           {person.name}
@@ -746,6 +773,69 @@ async function handleDecline(personId: string) {
             </div>
           )}
         </Card>
+
+        {openProfile && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            {/* backdrop */}
+            <div className="absolute inset-0 bg-black/50" onClick={() => setOpenProfile(null)} />
+
+            {/* modal */}
+            <div className="relative z-10 max-w-md w-full mx-4 rounded-2xl border border-white/20 bg-gradient-to-br from-white/15 to-white/5 p-6 backdrop-blur-xl shadow-2xl">
+              <button
+                className="absolute right-3 top-3 text-white/70 hover:text-white"
+                onClick={() => setOpenProfile(null)}
+                aria-label="Close"
+              >
+                ✕
+              </button>
+
+              <div className="flex items-center gap-4 mb-4">
+                <div className="w-14 h-14 rounded-full overflow-hidden bg-white/10 flex items-center justify-center text-white font-bold">
+                  {openProfile.image ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={openProfile.image} alt={openProfile.name} className="w-full h-full object-cover" />
+                  ) : (
+                    (openProfile.name?.charAt(0) || "U")
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-white font-semibold truncate">{openProfile.name}</h3>
+                  {openProfile.username && (
+                    <p className="text-white/70 text-sm truncate">@{openProfile.username}</p>
+                  )}
+                  <p className="text-white/70 text-sm truncate">{openProfile.email}</p>
+                </div>
+              </div>
+
+              {openProfile.location && (
+                <p className="text-white/80 text-sm mb-2">📍 {openProfile.location}</p>
+              )}
+
+              {openProfile.bio && (
+                <p className="text-white/90 text-sm mb-4 leading-relaxed">{openProfile.bio}</p>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-lg bg-white/10 p-3">
+                  <p className="text-white/60 text-xs">Connections</p>
+                  <p className="text-white font-semibold">{openProfile.connections ?? 0}</p>
+                </div>
+                <div className="rounded-lg bg-white/10 p-3">
+                  <p className="text-white/60 text-xs">Interests</p>
+                  <p className="text-white font-semibold text-sm truncate">
+                    {(openProfile.interests ?? []).join(", ") || "—"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-6 flex justify-end">
+                <Button onClick={() => setOpenProfile(null)} className="bg-white/80 text-purple-700 hover:bg-white">
+                  Close
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="flex gap-4">
           <Link href="/create" className="flex-1">

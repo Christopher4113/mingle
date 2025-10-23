@@ -7,7 +7,7 @@ import axios from "axios";
 import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Users, Sparkles, Calendar, Clock, MapPin, Tag } from "lucide-react";
+import { Users, Sparkles, Calendar, Clock, MapPin, Tag, X } from "lucide-react";
 
 function getCookie(name: string) {
   if (typeof document === "undefined") return undefined;
@@ -43,7 +43,13 @@ type Attendee = {
   name: string;
   email: string;
   avatar?: string;
-  joinedAt: string; // ISO string from server
+  joinedAt: string;
+  location?: string;
+  interests?: string[];
+  connections?: number;
+  bio?: string;
+  username?: string;
+  isCreator?: boolean;
 };
 
 type ApiResponse = {
@@ -52,8 +58,8 @@ type ApiResponse = {
     id: string;
     title: string;
     description: string;
-    startsAt: string; // ISO
-    endsAt: string;   // ISO
+    startsAt: string;
+    endsAt: string;
     location: string;
     category: string;
     inviteOnly: boolean;
@@ -72,10 +78,12 @@ export default function Page() {
   const [error, setError] = useState<string | null>(null);
   const [attendeesList, setAttendeesList] = useState<Attendee[]>([]);
 
+  // modal state
+  const [openProfile, setOpenProfile] = useState<Attendee | null>(null);
+
   const loadEvent = useCallback(async () => {
     try {
       setLoading(true);
-
       await fetch("/api/set-token", { method: "GET", credentials: "include" });
 
       const token = getCookie("token");
@@ -85,7 +93,6 @@ export default function Page() {
       };
 
       const res = await axios.get<ApiResponse>(`/api/users/meetup/${params.id}`, cfg);
-
       if (res.data?.ok && res.data.event) {
         const e = res.data.event;
         const start = new Date(e.startsAt);
@@ -125,16 +132,12 @@ export default function Page() {
   }, [status, params.id, loadEvent]);
 
   const handleRecommendPeople = () => {
-    console.log("Getting recommended people for this event...");
-    alert("Recommend People feature - this will show suggested attendees based on interests and connections!");
+    alert("Recommend People: coming soon!");
   };
 
   if (status === "loading" || loading) {
     return (
-      <div
-        className="min-h-screen flex items-center justify-center"
-        style={{ background: "linear-gradient(135deg, #4F46E5 0%, #EC4899 100%)" }}
-      >
+      <div className="min-h-screen flex items-center justify-center" style={{ background: "linear-gradient(135deg, #4F46E5 0%, #EC4899 100%)" }}>
         <div className="flex items-center gap-2">
           <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
           <p className="text-white">Loading event...</p>
@@ -145,18 +148,13 @@ export default function Page() {
 
   if (status === "unauthenticated") {
     return (
-      <div
-        className="min-h-screen flex items-center justify-center"
-        style={{ background: "linear-gradient(135deg, #4F46E5 0%, #EC4899 100%)" }}
-      >
+      <div className="min-h-screen flex items-center justify-center" style={{ background: "linear-gradient(135deg, #4F46E5 0%, #EC4899 100%)" }}>
         <div className="text-center">
           <div className="text-6xl mb-4">🔒</div>
           <h2 className="text-2xl font-bold text-white mb-2">Access Required</h2>
           <p className="text-white/80 mb-6">Please login to view this event</p>
           <Link href="/login">
-            <Button className="bg-white/20 backdrop-blur-sm border border-white/30 text-white hover:bg-white/30 transition-all duration-300">
-              Go to Login
-            </Button>
+            <Button className="bg-white/20 backdrop-blur-sm border border-white/30 text-white hover:bg-white/30">Go to Login</Button>
           </Link>
         </div>
       </div>
@@ -167,12 +165,7 @@ export default function Page() {
     return (
       <div className="min-h-screen" style={{ background: "linear-gradient(135deg, #4F46E5 0%, #EC4899 100%)" }}>
         <div className="p-6">
-          <Link
-            href="/users/create"
-            className="bg-white/20 backdrop-blur-sm text-white px-4 py-2 rounded-lg hover:bg-white/30 transition-all duration-200 inline-block"
-          >
-            ← Back to Events
-          </Link>
+          <Link href="/create" className="bg-white/20 backdrop-blur-sm text-white px-4 py-2 rounded-lg hover:bg-white/30 inline-block">← Back to Events</Link>
         </div>
         <div className="flex items-center justify-center min-h-[80vh]">
           <div className="text-center">
@@ -180,9 +173,7 @@ export default function Page() {
             <h2 className="text-2xl font-bold text-white mb-2">{error || "Event Not Found"}</h2>
             <p className="text-white/80 mb-6">The event you are looking for does not exist</p>
             <Link href="/create">
-              <Button className="bg-white/20 backdrop-blur-sm border border-white/30 text-white hover:bg-white/30 transition-all duration-300">
-                View All Events
-              </Button>
+              <Button className="bg-white/20 backdrop-blur-sm border border-white/30 text-white hover:bg-white/30">View All Events</Button>
             </Link>
           </div>
         </div>
@@ -193,12 +184,7 @@ export default function Page() {
   return (
     <div className="min-h-screen" style={{ background: "linear-gradient(135deg, #4F46E5 0%, #EC4899 100%)" }}>
       <div className="p-6">
-        <Link
-          href="/create"
-          className="bg-white/20 backdrop-blur-sm text-white px-4 py-2 rounded-lg hover:bg-white/30 transition-all duration-200 inline-block"
-        >
-          ← Back to Events
-        </Link>
+        <Link href="/create" className="bg-white/20 backdrop-blur-sm text-white px-4 py-2 rounded-lg hover:bg-white/30 inline-block">← Back to Events</Link>
       </div>
 
       <div className="max-w-5xl mx-auto p-6 space-y-6">
@@ -209,11 +195,7 @@ export default function Page() {
               <Tag className="w-4 h-4" />
               {event.category}
             </span>
-            <span
-              className={`px-4 py-2 rounded-full text-sm font-medium ${
-                event.inviteOnly ? "bg-purple-500/80 text-white" : "bg-green-500/80 text-white"
-              }`}
-            >
+            <span className={`px-4 py-2 rounded-full text-sm font-medium ${event.inviteOnly ? "bg-purple-500/80 text-white" : "bg-green-500/80 text-white"}`}>
               {event.inviteOnly ? "🔒 Invite Only" : "🌍 Public Event"}
             </span>
           </div>
@@ -226,43 +208,29 @@ export default function Page() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Card className="bg-white/10 backdrop-blur-sm border-white/20 p-6">
             <div className="flex items-start gap-4">
-              <div className="bg-white/10 p-3 rounded-lg">
-                <Calendar className="w-6 h-6 text-white" />
-              </div>
+              <div className="bg-white/10 p-3 rounded-lg"><Calendar className="w-6 h-6 text-white" /></div>
               <div>
                 <h3 className="text-white font-semibold text-lg mb-1">Date</h3>
-                <p className="text-white/90">
-                  <span className="font-medium">Start:</span> {event.startDate}
-                </p>
-                <p className="text-white/90">
-                  <span className="font-medium">End:</span> {event.endDate}
-                </p>
+                <p className="text-white/90"><span className="font-medium">Start:</span> {event.startDate}</p>
+                <p className="text-white/90"><span className="font-medium">End:</span> {event.endDate}</p>
               </div>
             </div>
           </Card>
 
           <Card className="bg-white/10 backdrop-blur-sm border-white/20 p-6">
             <div className="flex items-start gap-4">
-              <div className="bg-white/10 p-3 rounded-lg">
-                <Clock className="w-6 h-6 text-white" />
-              </div>
+              <div className="bg-white/10 p-3 rounded-lg"><Clock className="w-6 h-6 text-white" /></div>
               <div>
                 <h3 className="text-white font-semibold text-lg mb-1">Time</h3>
-                <p className="text-white/90">
-                  <span className="font-medium">Start:</span> {to12h(event.startTime)}
-                </p>
-                <p className="text-white/90">
-                  <span className="font-medium">End:</span> {to12h(event.endTime)}
-                </p>
+                <p className="text-white/90"><span className="font-medium">Start:</span> {to12h(event.startTime)}</p>
+                <p className="text-white/90"><span className="font-medium">End:</span> {to12h(event.endTime)}</p>
               </div>
             </div>
           </Card>
 
           <Card className="bg-white/10 backdrop-blur-sm border-white/20 p-6 md:col-span-2">
             <div className="flex items-start gap-4">
-              <div className="bg-white/10 p-3 rounded-lg">
-                <MapPin className="w-6 h-6 text-white" />
-              </div>
+              <div className="bg-white/10 p-3 rounded-lg"><MapPin className="w-6 h-6 text-white" /></div>
               <div>
                 <h3 className="text-white font-semibold text-lg mb-1">Location</h3>
                 <p className="text-white/90">{event.location}</p>
@@ -278,10 +246,7 @@ export default function Page() {
               <Users className="w-6 h-6" />
               Attendees ({attendeesList.length})
             </h2>
-            <Button
-              onClick={handleRecommendPeople}
-              className="bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:from-purple-600 hover:to-pink-600 shadow-lg"
-            >
+            <Button onClick={handleRecommendPeople} className="bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:from-purple-600 hover:to-pink-600 shadow-lg">
               <Sparkles className="w-4 h-4 mr-2" />
               Recommend People
             </Button>
@@ -294,27 +259,34 @@ export default function Page() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {attendeesList.map((attendee) => (
-                <div key={attendee.id} className="bg-white/5 rounded-lg p-4 hover:bg-white/10 transition-all">
+              {attendeesList.map((a) => (
+                <div key={a.id} className="bg-white/5 rounded-lg p-4 hover:bg-white/10 transition-all">
                   <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 bg-gradient-to-br from-purple-400 to-pink-400 rounded-full flex items-center justify-center text-white font-bold text-lg overflow-hidden">
-                      {attendee.avatar ? (
+                    {/* avatar bubble (click to open profile) */}
+                    <button
+                      onClick={() => setOpenProfile(a)}
+                      className="w-12 h-12 bg-gradient-to-br from-purple-400 to-pink-400 rounded-full flex items-center justify-center text-white font-bold text-lg overflow-hidden ring-2 ring-white/20 hover:ring-white/40 focus:outline-none"
+                      title="View profile"
+                    >
+                      {a.avatar ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={attendee.avatar}
-                          alt={attendee.name}
-                          className="w-full h-full object-cover"
-                        />
+                        <img src={a.avatar} alt={a.name} className="w-full h-full object-cover" />
                       ) : (
-                        attendee.name.charAt(0)
+                        (a.name?.charAt(0) || "U")
                       )}
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-white font-semibold">{attendee.name}</p>
-                      <p className="text-white/60 text-sm">{attendee.email}</p>
-                      <p className="text-white/50 text-xs mt-1">
-                        Joined {new Date(attendee.joinedAt).toLocaleString()}
-                      </p>
+                    </button>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-white font-semibold truncate">{a.name}</p>
+                        {a.isCreator && (
+                          <span className="text-[11px] px-2 py-0.5 rounded-full bg-white/10 border border-white/20 text-white/80">
+                            Creator
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-white/60 text-sm truncate">{a.email}</p>
+                      <p className="text-white/50 text-xs mt-1">Joined {new Date(a.joinedAt).toLocaleString()}</p>
                     </div>
                   </div>
                 </div>
@@ -323,7 +295,7 @@ export default function Page() {
           )}
         </Card>
 
-        {/* Action Buttons (left as-is; wire up to your join flow if needed) */}
+        {/* Actions */}
         <div className="flex gap-4">
           <Button className="flex-1 bg-white text-purple-600 font-bold py-6 rounded-lg hover:bg-gray-100 transition-all duration-200 shadow-lg text-lg">
             Join Event
@@ -336,6 +308,76 @@ export default function Page() {
           </Button>
         </div>
       </div>
+
+      {/* Profile Modal */}
+      {openProfile && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          {/* backdrop */}
+          <div className="absolute inset-0 bg-black/50" onClick={() => setOpenProfile(null)} />
+          {/* modal */}
+          <div className="relative z-10 max-w-md w-full mx-4 rounded-2xl border border-white/20 bg-gradient-to-br from-white/15 to-white/5 p-6 backdrop-blur-xl shadow-2xl">
+            <button
+              className="absolute right-3 top-3 text-white/70 hover:text-white"
+              onClick={() => setOpenProfile(null)}
+              aria-label="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-4 mb-4">
+              <div className="w-14 h-14 rounded-full overflow-hidden bg-white/10 flex items-center justify-center text-white font-bold">
+                {openProfile.avatar ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={openProfile.avatar} alt={openProfile.name} className="w-full h-full object-cover" />
+                ) : (
+                  (openProfile.name?.charAt(0) || "U")
+                )}
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-white font-semibold truncate">{openProfile.name}</h3>
+                  {openProfile.isCreator && (
+                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-white/10 border border-white/20 text-white/80">
+                      Creator
+                    </span>
+                  )}
+                </div>
+                {openProfile.username && (
+                  <p className="text-white/70 text-sm truncate">@{openProfile.username}</p>
+                )}
+                <p className="text-white/70 text-sm truncate">{openProfile.email}</p>
+              </div>
+            </div>
+
+            {openProfile.location && (
+              <p className="text-white/80 text-sm mb-2">📍 {openProfile.location}</p>
+            )}
+
+            {openProfile.bio && (
+              <p className="text-white/90 text-sm mb-4 leading-relaxed">{openProfile.bio}</p>
+            )}
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-lg bg-white/10 p-3">
+                <p className="text-white/60 text-xs">Connections</p>
+                <p className="text-white font-semibold">{openProfile.connections ?? 0}</p>
+              </div>
+              <div className="rounded-lg bg-white/10 p-3">
+                <p className="text-white/60 text-xs">Interests</p>
+                <p className="text-white font-semibold text-sm truncate">
+                  {(openProfile.interests ?? []).join(", ") || "—"}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end">
+              <Button onClick={() => setOpenProfile(null)} className="bg-white/80 text-purple-700 hover:bg-white">
+                Close
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
