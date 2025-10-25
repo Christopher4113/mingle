@@ -4,6 +4,7 @@ from helpers.extractToken import get_current_user
 from model.pinecone import add_user_pinecone, index
 from pydantic import BaseModel
 
+
 app = FastAPI()
 origins = [
     "http://localhost:3000",  # your frontend
@@ -52,6 +53,30 @@ def check_user_exists(current_user: dict = Depends(get_current_user)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
-@app.post("/reccomendations")
+@app.post("/recommendations")
 def get_recommendations(current_user: dict = Depends(get_current_user)):
     user_id = current_user["user_id"]
+    username = current_user["username"]
+
+    # Check if the user exists in Pinecone
+    try:
+        response = index.fetch(ids=[user_id])
+        exists = user_id in response.vectors
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error checking Pinecone: {str(e)}")
+
+    # If the user does not exist, create them first
+    if not exists:
+        default_text = f"This is the profile for {username}"
+        try:
+            add_user_pinecone(user_id=user_id, username=username, text=default_text)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error registering user in Pinecone: {str(e)}")
+
+    # (Later) here you will compute and return recommendations
+    return {
+        "message": "User exists and is ready for recommendations",
+        "user_id": user_id,
+        "username": username,
+        "pinecone_exists_before": exists
+    }
