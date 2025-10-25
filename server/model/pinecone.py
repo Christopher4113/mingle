@@ -12,26 +12,29 @@ PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME")
 pc = Pinecone(api_key=PINECONE_API_KEY)
 index = pc.Index(PINECONE_INDEX_NAME)
 
-def add_user_pinecone(user_id: str, username: str, text: str = "default user profile"):
-    """Add user to Pinecone index."""
+def add_user_pinecone(user_id: str, username: str | None, text: str = "default user profile"):
     embed_response = pc.inference.embed(
         model="llama-text-embed-v2",
         inputs=[text],
         parameters={"input_type": "query"}
     )
-
     if not embed_response.data:
         raise ValueError("Embedding failed or returned empty result")
 
     embedding = embed_response.data[0]["values"]
 
-    index.upsert(vectors=[
-        {
-            "id": user_id,
-            "values": embedding,
-            "metadata": {"username": username}
-        }
-    ])
+    metadata = {"user_id": user_id}
+    if username:  # only add if truthy
+        metadata["username"] = str(username)
+
+    index.upsert(vectors=[{
+        "id": user_id,
+        "values": embedding,
+        "metadata": metadata
+    }])
+    print("Embedding length:", len(embedding))
+
+
 
 def get_context_from_pinecone(user_id: str):
     """Fetch user context from Pinecone index."""

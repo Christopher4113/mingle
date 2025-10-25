@@ -4,8 +4,9 @@ from fastapi.security import OAuth2PasswordBearer
 from dotenv import load_dotenv
 import os
 load_dotenv()
-SECRET_KEY = os.getenv("SECRET_KEY")
-ALGORITHM = os.getenv("ALGORITHM")
+
+TOKEN_SECRET = os.getenv("TOKEN_SECRET")  # 👈 use the SAME var as Next.js
+ALGORITHM = os.getenv("ALGORITHM", "HS256")
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")  # You can still use this to extract token
@@ -17,8 +18,8 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id = payload.get("sub")
+        payload = jwt.decode(token, TOKEN_SECRET, algorithms=[ALGORITHM])
+        user_id = payload.get("id")
         username = payload.get("username")
         if user_id is None:
             raise credentials_exception
