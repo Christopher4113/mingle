@@ -1,9 +1,19 @@
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from helpers.extractToken import get_current_user
-from model.pinecone import add_user_pinecone, index
+from model.pinecone import (
+    add_user_pinecone,
+    user_exists,
+    fetch_user_vector,
+    set_user_bio,
+    upsert_user_with_bio_reembed,
+    index
+)
 from pydantic import BaseModel
 
+
+class RecommendationsIn(BaseModel):
+    bio: str | None = None
 
 app = FastAPI()
 origins = [
@@ -54,29 +64,29 @@ def check_user_exists(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=str(e))
     
 @app.post("/recommendations")
-def get_recommendations(current_user: dict = Depends(get_current_user)):
+def get_recommendations(body: RecommendationsIn, current_user: dict = Depends(get_current_user)):
     user_id = current_user["user_id"]
     username = current_user["username"]
+    bio = (body.bio or "").strip()
+    if not user_exists(user_id):
+        add_user_pinecone(user_id=user_id, username=username, text=f"This is the profile for {username}", bio=bio if bio else None)
+        created = True
+    else:
+        created = False
+    vec = fetch_user_vector(user_id)
+    has_bio_already = bool(vec and vec.metadata and vec.metadata.get("bio"))
 
-    # Check if the user exists in Pinecone
-    try:
-        response = index.fetch(ids=[user_id])
-        exists = user_id in response.vectors
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error checking Pinecone: {str(e)}")
+    if bio and not has_bio_already:
+        upsert_user_with_bio_reembed(user_id=user_id, username=username, bio=bio)
+        updated_bio = True
+    else:
+        updated_bio = False
 
-    # If the user does not exist, create them first
-    if not exists:
-        default_text = f"This is the profile for {username}"
-        try:
-            add_user_pinecone(user_id=user_id, username=username, text=default_text)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error registering user in Pinecone: {str(e)}")
-
-    # (Later) here you will compute and return recommendations
     return {
-        "message": "User exists and is ready for recommendations",
+        "ok": True,
         "user_id": user_id,
-        "username": username,
-        "pinecone_exists_before": exists
+        "created_user": created,
+        "added_bio_now": updated_bio,
+        "has_bio_after": True if (bio or has_bio_already) else False,
+        "note": "Ready for recommendation logic next."
     }
