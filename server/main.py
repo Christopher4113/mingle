@@ -1,3 +1,4 @@
+from typing import List
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from helpers.extractToken import get_current_user
@@ -9,11 +10,18 @@ from model.pinecone import (
     upsert_user_with_bio_reembed,
     index
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class RecommendationsIn(BaseModel):
     bio: str | None = None
+
+class RecommendationsBulkIn(BaseModel):
+    snippets: List[str] = Field(default_factory=list, description="Other's Bio")
+    names: List[str] = Field(default_factory=list, description="Other's Names")
+
+class RecommendationsRequest(RecommendationsIn, RecommendationsBulkIn):
+    pass
 
 app = FastAPI()
 origins = [
@@ -64,10 +72,12 @@ def check_user_exists(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=str(e))
     
 @app.post("/recommendations")
-def get_recommendations(body: RecommendationsIn, current_user: dict = Depends(get_current_user)):
+def get_recommendations(body: RecommendationsRequest, current_user: dict = Depends(get_current_user)):
     user_id = current_user["user_id"]
     username = current_user["username"]
     bio = (body.bio or "").strip()
+    snippets = [s.strip() for s in body.snippets if s and s.strip()]
+    names = [n.strip() for n in body.names if n and n.strip()]
     if not user_exists(user_id):
         add_user_pinecone(user_id=user_id, username=username, text=f"This is the profile for {username}", bio=bio if bio else None)
         created = True
@@ -81,6 +91,7 @@ def get_recommendations(body: RecommendationsIn, current_user: dict = Depends(ge
         updated_bio = True
     else:
         updated_bio = False
+    
 
     return {
         "ok": True,
