@@ -1,5 +1,5 @@
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 from typing import List, Dict, Any
 from dotenv import load_dotenv
 import os
@@ -11,7 +11,7 @@ load_dotenv()
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 # Use a more stable model
-LLM_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+LLM_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-pro")
 
 llm = ChatGoogleGenerativeAI(
     model=LLM_MODEL,
