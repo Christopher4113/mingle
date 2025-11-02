@@ -4,6 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from helpers.extractToken import get_current_user
 from model.pinecone import (
     add_user_pinecone,
+    append_interest_context,
+    get_interest_context,
     user_exists,
     fetch_user_vector,
     set_user_bio,
@@ -12,15 +14,27 @@ from model.pinecone import (
 )
 from agent.agent import recommend_names_from_pool
 from pydantic import BaseModel, Field
+from enum import Enum
+
+
+class InterestType(str, Enum):
+    networking = "Networking"
+    social = "Social"
+    wellness = "Wellness"
+    creative = "Creative"
+    learning = "Learning"
 
 
 # ---------- Schemas ----------
 class RecommendationsIn(BaseModel):
     bio: str | None = None
+    profile: str | None = None
+    interest: InterestType = InterestType.networking
 
 class RecommendationsBulkIn(BaseModel):
     snippets: List[str] = Field(default_factory=list, description="Other people's bio snippets")
     names: List[str] = Field(default_factory=list, description="Candidate names")
+
 
 class RecommendationsRequest(RecommendationsIn, RecommendationsBulkIn):
     pass
@@ -94,6 +108,8 @@ def get_recommendations(
     bio = (body.bio or "").strip()
     snippets = [s.strip() for s in (body.snippets or []) if s and s.strip()]
     names = [n.strip() for n in (body.names or []) if n and n.strip()]
+    profile = (body.profile or "").strip()
+    interest = body.interest
 
     if not names:
         raise HTTPException(status_code=400, detail="`names` is required and cannot be empty.")
@@ -123,12 +139,25 @@ def get_recommendations(
     else:
         added_bio_now = False
 
+    # ✅ Always re-fetch the latest vector metadata from Pinecone
+    updated_vec = fetch_user_vector(user_id)
+    stored_bio = ""
+    if updated_vec and getattr(updated_vec, "metadata", None):
+        stored_bio = updated_vec.metadata.get("bio", "").strip()
+
+    # Fall back to incoming bio if Pinecone bio is empty
+    final_bio = stored_bio or bio
+
+    prior_ctx = get_interest_context(user_id, interest.value)
+    
     # ---- Call the LLM recommender ----
     try:
         recs_raw = recommend_names_from_pool(
-            bio=bio,
+            bio=final_bio,
             snippets=snippets,
             names=names,
+            profile=profile,
+            prior_context=prior_ctx,
             top_k=min(top_k, len(names)),
         )
         # Coerce to pydantic schema (validates and trims)
@@ -136,12 +165,22 @@ def get_recommendations(
     except Exception as e:
         # Surface a clean error; you can log full details server-side
         raise HTTPException(status_code=500, detail=f"Failed to generate recommendations: {e}")
+    
+    try:
+        append_interest_context(
+            user_id=user_id,
+            interest=interest.value,
+            new_items=[r.model_dump() for r in recs_items],  # includes name/reason/score
+            max_items=100,  # tune as needed
+        )
+    except Exception:
+        pass
 
     return RecommendationsOut(
         ok=True,
         user_id=user_id,
         created_user=created,
         added_bio_now=added_bio_now,
-        has_bio_after=bool(bio or has_bio_already),
+        has_bio_after=bool(final_bio),
         recommendations=recs_items,
     )

@@ -24,6 +24,8 @@ def recommend_names_from_pool(
     bio: str,
     snippets: List[str],
     names: List[str],
+    profile: str | None = None,
+    prior_context: List[Dict[str, Any]] | None = None,
     top_k: int = 5,
     llm: ChatGoogleGenerativeAI = llm,
 ) -> List[Dict[str, Any]]:
@@ -39,6 +41,8 @@ def recommend_names_from_pool(
     bio = (bio or "").strip()
     snippets = [s.strip() for s in (snippets or []) if s and s.strip()]
     names = [n.strip() for n in (names or []) if n and n.strip()]
+    profile = (profile or "").strip()
+    prior_context = prior_context or []
     if not names:
         return []
 
@@ -48,6 +52,12 @@ def recommend_names_from_pool(
 
         USER BIO:
         {bio}
+
+        USERS' PROFILE just for the event (if any):
+        {profile}
+        
+        PRIOR INTEREST CONTEXT (past top picks for this interest; prefer diversity, avoid repeats):
+        {prior_ctx_block}
 
         OTHER PEOPLE'S BIOS (snippets):
         {snippets_block}
@@ -75,8 +85,19 @@ def recommend_names_from_pool(
     snippets_block = "\n".join(f"- {s}" for s in snippets) if snippets else "- (none provided)"
     names_block = "\n".join(f"- {n}" for n in names)
 
+    prior_ctx_block = "- (none)\n"
+    if prior_context:
+        prior_ctx_block = "\n".join(
+            f'- name="{c.get("name","")}", reason="{c.get("reason","")}", score={c.get("score",0)}'
+            for c in prior_context[:30]  # cap to keep prompt small
+        ) or "- (none)"
+
+    profile_block = (profile or "(none)")
+
     formatted = prompt.format(
         bio=bio,
+        profile_block=profile_block,         
+        prior_ctx_block=prior_ctx_block, 
         snippets_block=snippets_block,
         names_block=names_block,
         top_k=min(max(top_k, 1), len(names)),
