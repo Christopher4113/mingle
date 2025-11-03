@@ -49,6 +49,7 @@ class RecommendationsOut(BaseModel):
     user_id: str
     created_user: bool
     added_bio_now: bool
+    updated_bio_now: bool = False
     has_bio_after: bool
     recommendations: List[RecommendationItem] = Field(default_factory=list)
 
@@ -131,22 +132,34 @@ def get_recommendations(
         created = False
 
     vec = fetch_user_vector(user_id)
-    has_bio_already = bool(vec and getattr(vec, "metadata", {}) and vec.metadata.get("bio"))
+    existing_bio = ""
+    if vec and getattr(vec, "metadata", None):
+        existing_bio = (vec.metadata.get("bio") or "").strip()
 
-    if bio and not has_bio_already:
-        upsert_user_with_bio_reembed(user_id=user_id, username=username, bio=bio)
-        added_bio_now = True
-    else:
-        added_bio_now = False
+    added_bio_now = False  # keep your existing flag semantics
+
+    # --- Add or update logic
+    if bio:
+        # If there's no stored bio, add it; if it's different, update it.
+        if not existing_bio:
+            upsert_user_with_bio_reembed(user_id=user_id, username=username, bio=bio)
+            added_bio_now = True
+        elif bio != existing_bio:
+            # Update (re-embed only when content actually changed)
+            upsert_user_with_bio_reembed(user_id=user_id, username=username, bio=bio)
 
     # ✅ Always re-fetch the latest vector metadata from Pinecone
     updated_vec = fetch_user_vector(user_id)
     stored_bio = ""
     if updated_vec and getattr(updated_vec, "metadata", None):
-        stored_bio = updated_vec.metadata.get("bio", "").strip()
+        stored_bio = (updated_vec.metadata.get("bio") or "").strip()
 
-    # Fall back to incoming bio if Pinecone bio is empty
+    # Use the canonical stored bio; fall back to incoming if for some reason it isn’t there
     final_bio = stored_bio or bio
+
+    # has_bio_after reflects canonical value
+    has_bio_after = bool(final_bio)
+
 
     prior_ctx = get_interest_context(user_id, interest.value)
     
@@ -181,6 +194,6 @@ def get_recommendations(
         user_id=user_id,
         created_user=created,
         added_bio_now=added_bio_now,
-        has_bio_after=bool(final_bio),
+        has_bio_after=has_bio_after,
         recommendations=recs_items,
     )

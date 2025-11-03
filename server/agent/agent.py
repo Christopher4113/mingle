@@ -54,7 +54,7 @@ def recommend_names_from_pool(
         {bio}
 
         USERS' PROFILE just for the event (if any):
-        {profile}
+        {profile_block}
         
         PRIOR INTEREST CONTEXT (past top picks for this interest; prefer diversity, avoid repeats):
         {prior_ctx_block}
