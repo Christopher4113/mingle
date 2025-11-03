@@ -275,8 +275,6 @@ export default function Page() {
 
   const handleRecommendPeople = async () => {
     if (!params.id) return;
-
-    // Need these preconditions
     if (!eventNamesData || !eventNamesData.length) {
       alert("No attendees to recommend from yet.");
       return;
@@ -289,38 +287,19 @@ export default function Page() {
     try {
       setRecsLoading(true);
 
-      // 1) build names + snippets from eventNamesData
+      // Build names + snippets
       const { names, snippets } = buildNamesAndSnippets();
 
-      // 2) auth header (bearer token from cookie)
-      await fetch("/api/set-token", { method: "GET", credentials: "include" });
-      const token = getCookie("token");
-
-      if (!token) {
-        console.error("No token cookie found");
-        alert("Auth token missing. Try reloading and logging in again.");
-        return;
-      }
-
-      // 3) construct body
       const body = {
-        bio: myGeneralBio(),            // user's bio (or your chosen source)
-        profile: eventProfile || "",    // event profile
-        interest: eventInterest,        // e.g., "Networking"
-        names,                          // ["Sam L.", ...]
-        snippets,                       // ["Sam L. …", ...]
+        bio: myGeneralBio(),         // your bio (or eventProfile if that's what you want)
+        profile: eventProfile || "", // event profile
+        interest: eventInterest,     // e.g., "Networking"
+        names,
+        snippets,
       };
 
-      // 4) call FastAPI
-      const res = await axios.post<RecsResp>(
-        "http://127.0.0.1:8000/recommendations",
-        body,
-        {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-          withCredentials: false, // talking to 127.0.0.1:8000; CORS already enabled on FastAPI
-        }
-      );
-
+      // ✅ Hit Next API (server will attach Authorization from HttpOnly cookie)
+      const res = await axios.post<RecsResp>("/api/users/recommendations", body);
       if (!res.data?.ok) {
         alert("Failed to get recommendations.");
         return;
@@ -328,30 +307,27 @@ export default function Page() {
 
       const recsRaw = res.data.recommendations || [];
 
-      // 5) enrich with avatar + snippet (lookup by display name against attendees list / namesData)
+      // Enrich for modal
       const nameToAvatar = new Map<string, string | undefined>();
       const nameToSnippet = new Map<string, string | undefined>();
 
-      // From attendees for avatars
       for (const a of attendeesList) {
         const disp = displayNameOf(a.name, a.username);
         nameToAvatar.set(disp, a.avatar);
-        // Prefer event profile (already computed into openProfile logic), else bio for snippet
         const text = (a.profile && a.profile.trim()) || (a.bio && a.bio.trim()) || "";
         if (text) nameToSnippet.set(disp, text);
       }
-      // From namesData for text (authoritative snippets source you sent)
       for (const p of eventNamesData) {
         const disp = displayNameOf(p.name, p.username);
         const text = (p.text || "").trim();
         if (text && !nameToSnippet.get(disp)) nameToSnippet.set(disp, text);
       }
 
-      const enriched: RecRenderItem[] = recsRaw.map((r) => {
-        const avatar = nameToAvatar.get(r.name);
-        const snippet = nameToSnippet.get(r.name);
-        return { ...r, avatar, snippet };
-      });
+      const enriched = recsRaw.map((r) => ({
+        ...r,
+        avatar: nameToAvatar.get(r.name),
+        snippet: nameToSnippet.get(r.name),
+      }));
 
       setRecs(recsRaw);
       setRecsRender(enriched);
