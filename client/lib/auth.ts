@@ -17,7 +17,14 @@ export const authOptions: NextAuthOptions = {
     providers: [
         GoogleProvider({
             clientId: process.env.GOOGLE_CLIENT_ID!,
-            clientSecret: process.env.GOOGLE_CLIENT_SECRET!
+            clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+            authorization: {
+                params: {
+                prompt: "select_account",      // <-- always show the account picker
+                access_type: "offline",        // optional, for refresh tokens
+                response_type: "code",         // explicit code flow
+                },
+            },
         }),
         CredentialsProvider({
             name: "Credentials",

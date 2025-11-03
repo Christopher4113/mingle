@@ -73,7 +73,8 @@ const Page = () => {
     }
   }
 
-  const handleGoogle = () => signIn("google", { callbackUrl: `http://localhost:3000/menu` })
+  const handleGoogle = () =>
+    signIn("google", { callbackUrl: "/menu", prompt: "select_account" });
 
   return (
     <div
