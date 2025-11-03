@@ -44,9 +44,12 @@ export async function GET(req: NextRequest, ctx: Ctx) {
             bio: true,
           },
         },
+        // IMPORTANT: include profile + userId so we can compute event-profile
         EventAttendee: {
           select: {
             createdAt: true,
+            profile: true,       // <-- event-specific profile
+            userId: true,        // <-- to match with creator/user
             user: {
               select: {
                 id: true,
@@ -68,25 +71,41 @@ export async function GET(req: NextRequest, ctx: Ctx) {
 
     if (!ev) return bad("Event not found", 404);
 
-    // build attendees (exclude the current viewer)
+    // Helper: resolve event profile with fallback to user bio, else ""
+    const resolveProfile = (row: { profile: string | null | undefined; user?: { bio?: string | null } | null }) =>
+      (row.profile && row.profile.trim()) ||
+      (row.user?.bio && row.user.bio.trim()) ||
+      "";
+
+    // Build attendees (exclude the current viewer)
     const base = ev.EventAttendee
-      .filter((row) => row.user.id !== viewerId) // 👈 hide current user
+      .filter((row) => row.user?.id !== viewerId) // 👈 hide current user
       .map((row) => ({
-        id: row.user.id,
-        name: row.user.name || row.user.username || "User",
-        email: row.user.email ?? "",
-        avatar: row.user.profileImageUrl ?? undefined,
+        id: row.user?.id ?? row.userId,
+        name: row.user?.name || row.user?.username || "User",
+        email: row.user?.email ?? "",
+        avatar: row.user?.profileImageUrl ?? undefined,
         joinedAt: row.createdAt.toISOString(),
-        location: row.user.location ?? "",
-        interests: row.user.interests ?? [],
-        connections: row.user.connections ?? 0,
-        bio: row.user.bio ?? "",
-        username: row.user.username ?? undefined,
+        location: row.user?.location ?? "",
+        interests: row.user?.interests ?? [],
+        connections: row.user?.connections ?? 0,
+        bio: row.user?.bio ?? "",                 // keep original bio if you still want to show it elsewhere
+        profile: resolveProfile(row),             // <-- event profile with fallback
+        username: row.user?.username ?? undefined,
         isCreator: false,
       }));
 
-    // always include the creator (flagged), even if they’re the viewer
+    // Creator entry (prefer their EventAttendee.profile if present)
     const creator = ev.creator;
+    let creatorProfileResolved = "";
+    if (creator) {
+      const creatorEA = ev.EventAttendee.find((r) => r.userId === creator.id);
+      creatorProfileResolved =
+        (creatorEA?.profile && creatorEA.profile.trim()) ||
+        (creator.bio && creator.bio.trim()) ||
+        "";
+    }
+
     const creatorEntry = creator && {
       id: creator.id,
       name: creator.name || creator.username || "Host",
@@ -97,6 +116,7 @@ export async function GET(req: NextRequest, ctx: Ctx) {
       interests: creator.interests ?? [],
       connections: creator.connections ?? 0,
       bio: creator.bio ?? "",
+      profile: creatorProfileResolved,      // <-- event profile with fallback
       username: creator.username ?? undefined,
       isCreator: true,
     };
