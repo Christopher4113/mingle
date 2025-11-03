@@ -23,6 +23,8 @@ function to12h(hhmm: string) {
   return `${h}:${m} ${ampm}`;
 }
 
+
+
 type EventDetail = {
   id: string;
   title: string;
@@ -102,6 +104,17 @@ type NamesResp = {
   }[];
 };
 
+type RecItem = { name: string; score: number; reason: string };
+type RecsResp = {
+  ok: boolean;
+  user_id: string;
+  created_user: boolean;
+  added_bio_now: boolean;
+  updated_bio_now?: boolean;
+  has_bio_after: boolean;
+  recommendations: RecItem[];
+};
+
 export default function Page() {
   const params = useParams() as { id?: string };
   const { status } = useSession();
@@ -119,6 +132,15 @@ export default function Page() {
   const [saving, setSaving] = useState(false);
   const [eventInterest, setEventInterest] = useState<string | null>(null);
   const [eventNamesData, setEventNamesData] = useState<NamesResp["people"] | null>(null);
+
+  // --- NEW: recs modal state
+  const [recsOpen, setRecsOpen] = useState(false);
+  const [recsLoading, setRecsLoading] = useState(false);
+  const [recs, setRecs] = useState<RecItem[]>([]);
+
+  // for enriching the modal (avatar + snippet by name)
+  type RecRenderItem = RecItem & { avatar?: string; snippet?: string };
+  const [recsRender, setRecsRender] = useState<RecRenderItem[]>([]);
 
   // helper to ensure cookie token + axios cfg
   const authCfg = useCallback(async () => {
@@ -222,8 +244,124 @@ export default function Page() {
     }
   }, [status, params.id, loadEvent, loadMyProfile, loadEventInterest,loadEventNames]);
 
-  const handleRecommendPeople = () => {
-    alert("Recommend People: coming soon!");
+
+  
+  function displayNameOf(n?: string | null, u?: string | null) {
+    return (n && n.trim()) || (u && u.trim()) || "User";
+  }
+
+  function buildNamesAndSnippets() {
+    const people = eventNamesData ?? [];
+    const names: string[] = [];
+    const snippets: string[] = [];
+
+    for (const p of people) {
+      const disp = displayNameOf(p.name, p.username);
+      names.push(disp);
+
+      const text = (p.text || "").trim();
+      // “name. text” (avoid duplicate name prefix)
+      const snippet =
+        text.toLowerCase().startsWith(disp.toLowerCase())
+          ? text
+          : `${disp}. ${text || ""}`.trim();
+      snippets.push(snippet);
+    }
+    return { names, snippets };
+  }
+  function myGeneralBio(): string {
+    return (eventProfile || "").trim();
+  }
+
+  const handleRecommendPeople = async () => {
+    if (!params.id) return;
+
+    // Need these preconditions
+    if (!eventNamesData || !eventNamesData.length) {
+      alert("No attendees to recommend from yet.");
+      return;
+    }
+    if (!eventInterest) {
+      alert("Missing event category/interest. Try reloading.");
+      return;
+    }
+
+    try {
+      setRecsLoading(true);
+
+      // 1) build names + snippets from eventNamesData
+      const { names, snippets } = buildNamesAndSnippets();
+
+      // 2) auth header (bearer token from cookie)
+      await fetch("/api/set-token", { method: "GET", credentials: "include" });
+      const token = getCookie("token");
+
+      if (!token) {
+        console.error("No token cookie found");
+        alert("Auth token missing. Try reloading and logging in again.");
+        return;
+      }
+
+      // 3) construct body
+      const body = {
+        bio: myGeneralBio(),            // user's bio (or your chosen source)
+        profile: eventProfile || "",    // event profile
+        interest: eventInterest,        // e.g., "Networking"
+        names,                          // ["Sam L.", ...]
+        snippets,                       // ["Sam L. …", ...]
+      };
+
+      // 4) call FastAPI
+      const res = await axios.post<RecsResp>(
+        "http://127.0.0.1:8000/recommendations",
+        body,
+        {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          withCredentials: false, // talking to 127.0.0.1:8000; CORS already enabled on FastAPI
+        }
+      );
+
+      if (!res.data?.ok) {
+        alert("Failed to get recommendations.");
+        return;
+      }
+
+      const recsRaw = res.data.recommendations || [];
+
+      // 5) enrich with avatar + snippet (lookup by display name against attendees list / namesData)
+      const nameToAvatar = new Map<string, string | undefined>();
+      const nameToSnippet = new Map<string, string | undefined>();
+
+      // From attendees for avatars
+      for (const a of attendeesList) {
+        const disp = displayNameOf(a.name, a.username);
+        nameToAvatar.set(disp, a.avatar);
+        // Prefer event profile (already computed into openProfile logic), else bio for snippet
+        const text = (a.profile && a.profile.trim()) || (a.bio && a.bio.trim()) || "";
+        if (text) nameToSnippet.set(disp, text);
+      }
+      // From namesData for text (authoritative snippets source you sent)
+      for (const p of eventNamesData) {
+        const disp = displayNameOf(p.name, p.username);
+        const text = (p.text || "").trim();
+        if (text && !nameToSnippet.get(disp)) nameToSnippet.set(disp, text);
+      }
+
+      const enriched: RecRenderItem[] = recsRaw.map((r) => {
+        const avatar = nameToAvatar.get(r.name);
+        const snippet = nameToSnippet.get(r.name);
+        return { ...r, avatar, snippet };
+      });
+
+      setRecs(recsRaw);
+      setRecsRender(enriched);
+      setRecsOpen(true);
+    } catch (e) {
+      console.error(e);
+      alert("Could not generate recommendations.");
+    } finally {
+      setRecsLoading(false);
+    }
   };
 
   // Save button -> POST
@@ -263,6 +401,7 @@ export default function Page() {
       console.error("Autosave failed", e);
     }
   };
+
 
   if (status === "loading" || loading) {
     return (
@@ -445,9 +584,10 @@ export default function Page() {
             <Button
               onClick={handleRecommendPeople}
               className="bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:from-purple-600 hover:to-pink-600 shadow-lg"
+              disabled={recsLoading}
             >
               <Sparkles className="w-4 h-4 mr-2" />
-              Recommend People
+              {recsLoading ? "Generating..." : "Recommend People"}
             </Button>
           </div>
 
@@ -578,6 +718,65 @@ export default function Page() {
 
             <div className="mt-6 flex justify-end">
               <Button onClick={() => setOpenProfile(null)} className="bg-white/80 text-purple-700 hover:bg-white">
+                Close
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- NEW: Recommendations Modal --- */}
+      {recsOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          {/* backdrop */}
+          <div className="absolute inset-0 bg-black/50" onClick={() => setRecsOpen(false)} />
+          {/* modal */}
+          <div className="relative z-10 max-w-xl w-full mx-4 rounded-2xl border border-white/20 bg-gradient-to-br from-white/15 to-white/5 p-6 backdrop-blur-xl shadow-2xl">
+            <button
+              className="absolute right-3 top-3 text-white/70 hover:text-white"
+              onClick={() => setRecsOpen(false)}
+              aria-label="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <h3 className="text-white font-semibold text-lg mb-4">Recommended People</h3>
+
+            {recsRender.length === 0 ? (
+              <p className="text-white/80 text-sm">No recommendations this time.</p>
+            ) : (
+              <div className="space-y-3 max-h-[60vh] overflow-auto pr-1">
+                {recsRender.map((r, idx) => (
+                  <div key={idx} className="bg-white/10 border border-white/10 rounded-xl p-3 flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-full overflow-hidden bg-white/10 flex items-center justify-center text-white font-bold shrink-0">
+                      {r.avatar ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={r.avatar || "/placeholder.svg"} alt={r.name} className="w-full h-full object-cover" />
+                      ) : (
+                        r.name.charAt(0)
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-white font-semibold truncate">{r.name}</p>
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-white/10 border border-white/20 text-white/80 shrink-0">
+                          Score {r.score}
+                        </span>
+                      </div>
+                      {r.snippet && (
+                        <p className="text-white/80 text-sm mt-1 line-clamp-3">{r.snippet}</p>
+                      )}
+                      <p className="text-white/60 text-xs mt-2">
+                        <span className="font-medium text-white/80">Why:</span> {r.reason}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="mt-4 flex justify-end">
+              <Button onClick={() => setRecsOpen(false)} className="bg-white/80 text-purple-700 hover:bg-white">
                 Close
               </Button>
             </div>
