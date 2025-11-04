@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Card } from "@/components/ui/card"
-import { Search, UserPlus, UserMinus, Users, Sparkles } from "lucide-react"
+import { Search, UserPlus, UserMinus, Users, Sparkles, X } from "lucide-react"
 import { useRef } from "react";
 
 function Avatar({ src, alt }: { src?: string | null; alt: string }) {
@@ -95,6 +95,7 @@ type Person = {
   status: Status
   username?: string | null;
   bio?: string;
+  profile?: string | null;
   location?: string;
   image?: string | null;
   interests?: string[]
@@ -106,6 +107,7 @@ type ApiPerson = {
   name?: string | null;
   email?: string | null;
   bio?: string | null;
+  profile?: string | null;
   location?: string | null;
   image?: string | null;
   status: Status;
@@ -115,6 +117,28 @@ type ApiPerson = {
 
 type InvitedResp = { ok: boolean; invited: ApiPerson[] };
 type SearchResp  = { ok: boolean; results: ApiPerson[] };
+
+type NamesResp = {
+  ok: true;
+  eventId: string;
+  people: {
+    userId: string;
+    name: string | null;
+    username: string | null;
+    text: string; // event-profile -> bio -> name/username
+  }[];
+};
+
+type RecItem = { name: string; score: number; reason: string };
+type RecsResp = {
+  ok: boolean;
+  user_id: string;
+  created_user: boolean;
+  added_bio_now: boolean;
+  updated_bio_now?: boolean;
+  has_bio_after: boolean;
+  recommendations: RecItem[];
+};
 
 export default function EventDetailPage() {
   const params = useParams() as { id?: string }
@@ -130,6 +154,15 @@ export default function EventDetailPage() {
   const [isEditingAbout, setIsEditingAbout] = useState(false)
   const [actioningId, setActioningId] = useState<string | null>(null);
   const [openProfile, setOpenProfile] = useState<Person | null>(null)
+  const [eventNamesData, setEventNamesData] = useState<NamesResp["people"] | null>(null);
+
+  const [recsOpen, setRecsOpen] = useState(false);
+  const [recsLoading, setRecsLoading] = useState(false);
+  const [recs, setRecs] = useState<RecItem[]>([]);
+
+  // For enriching: avatar + snippet by name
+  type RecRenderItem = RecItem & { avatar?: string; snippet?: string };
+  const [recsRender, setRecsRender] = useState<RecRenderItem[]>([]);
 
   const loadEvent = useCallback(async () => {
     try {
@@ -196,6 +229,7 @@ export default function EventDetailPage() {
         status: u.status,
         username: u.username ?? null,
         bio: u.bio ?? "",
+        profile: u.profile ?? null,
         location: u.location ?? "",
         image: u.image ?? null,
         interests: u.interests ?? [],     
@@ -223,6 +257,7 @@ export default function EventDetailPage() {
           status: "none",
           username: u.username ?? null,
           bio: u.bio ?? "",
+          profile: u.profile ?? null,
           location: u.location ?? "",
           image: u.image ?? null,
           interests: u.interests ?? [],       
@@ -234,12 +269,35 @@ export default function EventDetailPage() {
     [params.id]
   );
 
+  const loadEventNames = useCallback(async () => {
+    if (!params.id) return;
+    try {
+      // ensure the token cookie exists
+      await fetch("/api/set-token", { method: "GET", credentials: "include" });
+
+      const res = await axios.get<NamesResp>(
+        `/api/users/meetup/${params.id}/names`,
+        {
+          withCredentials: true,
+          headers: authHeaders(), // uses the helpers you already defined up top
+        }
+      );
+
+      if (res.data?.ok) {
+        setEventNamesData(res.data.people);
+      }
+    } catch (e) {
+      console.error("Failed to load names/profiles", e);
+    }
+  }, [params.id]);
+
   useEffect(() => {
     if (status === "authenticated" && params.id) {
       loadEvent()
       fetchInvited();
+      loadEventNames();
     }
-  }, [status, params.id, loadEvent, fetchInvited])
+  }, [status, params.id, loadEvent, fetchInvited, loadEventNames]);
 
   const typeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -274,6 +332,7 @@ export default function EventDetailPage() {
         status: "none",
         username: u.username ?? null,
         bio: u.bio ?? "",
+        profile: u.profile ?? null,
         location: u.location ?? "",
         image: u.image ?? null,
         interests: u.interests ?? [],       
@@ -320,6 +379,7 @@ export default function EventDetailPage() {
         status: u.status,
         username: u.username ?? null,
         bio: u.bio ?? "",
+        profile: u.profile ?? null,
         location: u.location ?? "",
         image: u.image ?? null,
         interests: u.interests ?? [],       
@@ -380,50 +440,158 @@ export default function EventDetailPage() {
     }
   };
 
-  const handleRecommendPeople = () => {
-    // Mock recommendations - replace with actual API call
-    const mockRecommendations = [
-      { id: "4", name: "Alice Williams", email: "alice@example.com", status: "none" as const },
-      { id: "5", name: "Charlie Brown", email: "charlie@example.com", status: "none" as const },
-    ] satisfies Person[];
-    setSearchResults(mockRecommendations);
+  function displayNameOf(n?: string | null, u?: string | null) {
+    return (n && n.trim()) || (u && u.trim()) || "User";
   }
+
+  function buildNamesAndSnippets() {
+    const people = eventNamesData ?? [];
+    const names: string[] = [];
+    const snippets: string[] = [];
+
+    for (const p of people) {
+      const disp = displayNameOf(p.name, p.username);
+      names.push(disp);
+
+      const text = (p.text || "").trim();
+      const snippet =
+        text.toLowerCase().startsWith(disp.toLowerCase())
+          ? text
+          : `${disp}. ${text || ""}`.trim();
+
+      snippets.push(snippet);
+    }
+    return { names, snippets };
+  }
+
+  function myGeneralBio(): string {
+    return (aboutText || "").trim(); // you can swap to a different source if you prefer
+  }
+  const handleRecommendPeople = async () => {
+    if (!params.id) return;
+
+    // Need attendees to recommend from
+    if (!eventNamesData || !eventNamesData.length) {
+      alert("No attendees to recommend from yet.");
+      return;
+    }
+
+    // Use the event category as the interest (your other page calls a separate interest API)
+    const eventInterest = event?.category || "Networking";
+
+    try {
+      setRecsLoading(true);
+
+      // 1) names + snippets from /names
+      const { names, snippets } = buildNamesAndSnippets();
+
+      // 2) ensure HttpOnly auth cookie is present so the Next route can attach Authorization
+      await fetch("/api/set-token", { method: "GET", credentials: "include" });
+
+      // 3) call your Next API (server-side will forward to FastAPI w/ Authorization)
+      const body = {
+        bio: myGeneralBio(),         // your general bio (or event-specific text)
+        profile: aboutText || "",    // event-profile if you want to pass it too
+        interest: eventInterest,     // e.g., "Networking"
+        names,
+        snippets,
+      };
+
+      const res = await axios.post<RecsResp>("/api/users/recommendations", body);
+      if (!res.data?.ok) {
+        alert("Failed to get recommendations.");
+        return;
+      }
+
+      const recsRaw = res.data.recommendations || [];
+
+      // 4) Enrich recommendations with avatar + snippet
+      const nameToAvatar = new Map<string, string | undefined>();
+      const nameToSnippet = new Map<string, string | undefined>();
+
+      // Use invitedPeople as your local roster for avatars/bios
+      for (const p of invitedPeople) {
+        const disp = p.name || p.username || "User";
+        nameToAvatar.set(disp, p.image ?? undefined);
+        const text = (p.bio && p.bio.trim()) || "";
+        if (text) nameToSnippet.set(disp, text);
+      }
+      // Prefer authoritative snippet from /names if present
+      for (const p of eventNamesData) {
+        const disp = displayNameOf(p.name, p.username);
+        const text = (p.text || "").trim();
+        if (text && !nameToSnippet.get(disp)) nameToSnippet.set(disp, text);
+      }
+
+      const enriched: RecRenderItem[] = recsRaw.map((r) => ({
+        ...r,
+        avatar: nameToAvatar.get(r.name),
+        snippet: nameToSnippet.get(r.name),
+      }));
+
+      setRecs(recsRaw);
+      setRecsRender(enriched);
+      setRecsOpen(true);
+    } catch (e) {
+      console.error(e);
+      alert("Could not generate recommendations.");
+    } finally {
+      setRecsLoading(false);
+    }
+  };
 
   async function handleApprove(personId: string) {
-  try {
-    setActioningId(personId);
-    await fetch("/api/set-token", { method: "GET", credentials: "include" });
-    const res = await fetch(`/api/users/events/${params.id}/join`, {
-      method: "PATCH",
-      credentials: "include",
-      headers: jsonAuthHeaders(),
-      body: JSON.stringify({ userId: personId, action: "approve" }),
-    });
-    const data = await res.json();
-    if (!data?.ok) return alert(data?.error ?? "Approve failed");
-    await fetchInvited(); // refresh list/status pills
-  } finally {
-    setActioningId(null);
+    try {
+      setActioningId(personId);
+      await fetch("/api/set-token", { method: "GET", credentials: "include" });
+      const res = await fetch(`/api/users/events/${params.id}/join`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: jsonAuthHeaders(),
+        body: JSON.stringify({ userId: personId, action: "approve" }),
+      });
+      const data = await res.json();
+      if (!data?.ok) return alert(data?.error ?? "Approve failed");
+      await fetchInvited(); // refresh list/status pills
+    } finally {
+      setActioningId(null);
+    }
   }
-}
 
-async function handleDecline(personId: string) {
-  try {
-    setActioningId(personId);
-    await fetch("/api/set-token", { method: "GET", credentials: "include" });
-    const res = await fetch(`/api/users/events/${params.id}/join`, {
-      method: "PATCH",
-      credentials: "include",
-      headers: jsonAuthHeaders(),
-      body: JSON.stringify({ userId: personId, action: "decline" }),
-    });
-    const data = await res.json();
-    if (!data?.ok) return alert(data?.error ?? "Decline failed");
-    await fetchInvited();
-  } finally {
-    setActioningId(null);
+  async function handleDecline(personId: string) {
+    try {
+      setActioningId(personId);
+      await fetch("/api/set-token", { method: "GET", credentials: "include" });
+      const res = await fetch(`/api/users/events/${params.id}/join`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: jsonAuthHeaders(),
+        body: JSON.stringify({ userId: personId, action: "decline" }),
+      });
+      const data = await res.json();
+      if (!data?.ok) return alert(data?.error ?? "Decline failed");
+      await fetchInvited();
+    } finally {
+      setActioningId(null);
+    }
   }
-}
+
+  function preferredProfileFor(p: Person, names?: NamesResp["people"] | null) {
+    // 1) try event-scoped text from /names
+    const hit = names?.find((n) => n.userId === p.id);
+    const fromNames = hit?.text?.trim();
+    if (fromNames) return fromNames;
+
+    // 2) fall back to explicit event profile if you ever have it on Person
+    const fromProfile = p.profile?.trim();
+    if (fromProfile) return fromProfile;
+
+    // 3) fall back to global bio
+    const fromBio = p.bio?.trim();
+    if (fromBio) return fromBio;
+
+    return "";
+  }
 
   if (status === "loading" || loading) {
     return (
@@ -629,13 +797,6 @@ async function handleDecline(personId: string) {
               <Search className="w-4 h-4 mr-2" />
               Search
             </Button>
-            <Button
-              onClick={handleRecommendPeople}
-              className="bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:from-purple-600 hover:to-pink-600"
-            >
-              <Sparkles className="w-4 h-4 mr-2" />
-              Recommend People
-            </Button>
           </div>
 
           {searchResults.length > 0 && (
@@ -681,10 +842,21 @@ async function handleDecline(personId: string) {
         </Card>
 
         <Card className="bg-white/10 backdrop-blur-sm border-white/20 p-6">
-          <h2 className="text-2xl font-bold text-white mb-4 flex items-center gap-2">
-            <Users className="w-6 h-6" />
-            Manage Invitations
-          </h2>
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+              <Users className="w-6 h-6" />
+              Manage Invitations
+            </h2>
+
+            <Button
+              onClick={handleRecommendPeople}
+              className="bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:from-purple-600 hover:to-pink-600"
+              disabled={recsLoading}
+            >
+              <Sparkles className="w-4 h-4 mr-2" />
+              {recsLoading ? "Generating..." : "Recommend People"}
+            </Button>
+          </div>
 
           {invitedPeople.length === 0 ? (
             <p className="text-white/60 text-center py-8">
@@ -811,9 +983,12 @@ async function handleDecline(personId: string) {
                 <p className="text-white/80 text-sm mb-2">📍 {openProfile.location}</p>
               )}
 
-              {openProfile.bio && (
-                <p className="text-white/90 text-sm mb-4 leading-relaxed">{openProfile.bio}</p>
-              )}
+              {(() => {
+                const prioritized = preferredProfileFor(openProfile, eventNamesData);
+                return prioritized ? (
+                  <p className="text-white/90 text-sm mb-4 leading-relaxed">{prioritized}</p>
+                ) : null;
+              })()}
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-lg bg-white/10 p-3">
@@ -845,6 +1020,64 @@ async function handleDecline(personId: string) {
           </Link>
         </div>
       </div>
+      {/* --- NEW: Recommendations Modal --- */}
+      {recsOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          {/* backdrop */}
+          <div className="absolute inset-0 bg-black/50" onClick={() => setRecsOpen(false)} />
+          {/* modal */}
+          <div className="relative z-10 max-w-xl w-full mx-4 rounded-2xl border border-white/20 bg-gradient-to-br from-white/15 to-white/5 p-6 backdrop-blur-xl shadow-2xl">
+            <button
+              className="absolute right-3 top-3 text-white/70 hover:text-white"
+              onClick={() => setRecsOpen(false)}
+              aria-label="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <h3 className="text-white font-semibold text-lg mb-4">Recommended People</h3>
+
+            {recsRender.length === 0 ? (
+              <p className="text-white/80 text-sm">No recommendations this time.</p>
+            ) : (
+              <div className="space-y-3 max-h-[60vh] overflow-auto pr-1">
+                {recsRender.map((r, idx) => (
+                  <div key={idx} className="bg-white/10 border border-white/10 rounded-xl p-3 flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-full overflow-hidden bg-white/10 flex items-center justify-center text-white font-bold shrink-0">
+                      {r.avatar ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={r.avatar || "/placeholder.svg"} alt={r.name} className="w-full h-full object-cover" />
+                      ) : (
+                        r.name.charAt(0)
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-white font-semibold truncate">{r.name}</p>
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-white/10 border border-white/20 text-white/80 shrink-0">
+                          Score {r.score}
+                        </span>
+                      </div>
+                      {r.snippet && (
+                        <p className="text-white/80 text-sm mt-1 line-clamp-3">{r.snippet}</p>
+                      )}
+                      <p className="text-white/60 text-xs mt-2">
+                        <span className="font-medium text-white/80">Why:</span> {r.reason}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="mt-4 flex justify-end">
+              <Button onClick={() => setRecsOpen(false)} className="bg-white/80 text-purple-700 hover:bg-white">
+                Close
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

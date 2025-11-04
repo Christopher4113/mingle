@@ -378,6 +378,23 @@ export default function Page() {
     }
   };
 
+  function preferredProfileFor(p: Attendee, names?: NamesResp["people"] | null) {
+    // 1) try event-scoped text from /names
+    const hit = names?.find((n) => n.userId === p.id);
+    const fromNames = hit?.text?.trim();
+    if (fromNames) return fromNames;
+
+    // 2) fall back to explicit event profile if you ever have it on Person
+    const fromProfile = p.profile?.trim();
+    if (fromProfile) return fromProfile;
+
+    // 3) fall back to global bio
+    const fromBio = p.bio?.trim();
+    if (fromBio) return fromBio;
+
+    return "";
+  }
+
 
   if (status === "loading" || loading) {
     return (
@@ -669,13 +686,9 @@ export default function Page() {
             {openProfile.location && <p className="text-white/80 text-sm mb-2">📍 {openProfile.location}</p>}
 
             {(() => {
-              const eventBio =
-                (openProfile.profile && openProfile.profile.trim()) ||
-                (openProfile.bio && openProfile.bio.trim()) ||
-                "";
-
-              return eventBio ? (
-                <p className="text-white/90 text-sm mb-4 leading-relaxed">{eventBio}</p>
+              const prioritized = preferredProfileFor(openProfile, eventNamesData);
+              return prioritized ? (
+                <p className="text-white/90 text-sm mb-4 leading-relaxed">{prioritized}</p>
               ) : null;
             })()}
 
