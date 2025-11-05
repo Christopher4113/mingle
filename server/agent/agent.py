@@ -149,3 +149,95 @@ def recommend_names_from_pool(
     cleaned = cleaned[: min(max(top_k, 1), len(names))]
 
     return cleaned
+
+def reccomend_events_from_pool(
+    bio: str,
+    snippets: List[str],
+    events: List[str],
+    prior_context: List[Dict[str, Any]] | None = None,
+    top_k: int = 5,
+    llm: ChatGoogleGenerativeAI = llm,
+) -> List[Dict[str, Any]]:
+    bio = (bio or "").strip()
+    snippets = [s.strip() for s in (snippets or []) if s and s.strip()]
+    events = [e.strip() for e in (events or []) if e and e.strip()]
+    prior_context = prior_context or []
+    if not events:
+        return []
+    # Prompt: keep it tight, constrain output, forbid inventing events
+    template = """
+        You are helping pick relevant events for a user to attend.
+        USER BIO:
+        {bio}
+        PRIOR EVENT CONTEXT (past top picks; prefer diversity, avoid repeats):
+        {prior_ctx_block}
+        ALL EVENTS (snippets):
+        {snippets_block}
+        EVENTS NAMES (the only events you may choose from):
+        {events_block}
+
+        TASK:
+        1) Select up to {top_k} events from the EVENTS NAMES that best match the USER BIO,
+        using the ALL EVENTS as evidence of fit (topics, speakers, goals).
+        2) Assign a 0-100 relevance score (higher is better).
+        3) Briefly explain the reason for each pick (one sentence).
+        4) DO NOT invent events that are not in EVENTS NAMES.
+        STRICT OUTPUT (valid JSON only, no prose outside JSON):
+        {{
+        "recommendations": [
+            {{"event": "<event from event list>", "score": <int 0-100>, "reason": "<short reason>"}}
+        ]
+        }}
+    """
+    prompt = PromptTemplate.from_template(template)
+    snippets_block = "\n".join(f"- {s}" for s in snippets) if snippets else "- (none provided)"
+    events_block = "\n".join(f"- {e}" for e in events)
+    prior_ctx_block = "- (none)\n"
+    if prior_context:
+        prior_ctx_block = "\n".join(
+            f'- event="{c.get("event","")}", reason="{c.get("reason","")}", score={c.get("score",0)}'
+            for c in prior_context[:30]  # cap to keep prompt small
+        ) or "- (none)"
+    formatted = prompt.format(
+        bio=bio,
+        prior_ctx_block=prior_ctx_block,
+        snippets_block=snippets_block,
+        events_block=events_block,
+        top_k=min(max(top_k, 1), len(events)),
+    )
+    result = llm.invoke(formatted)
+    raw = getattr(result, "content", result)  # ChatGoogleGenerativeAI returns
+
+    def _parse_recs(txt: str) -> List[Dict[str, Any]]:
+        try:
+            obj = json.loads(txt)
+            recs = obj.get("recommendations", [])
+            if isinstance(recs, list):
+                return recs
+        except Exception:
+            pass
+        m = re.search(r"\{.*\}", txt, flags=re.DOTALL)
+        if m:
+            try:
+                obj = json.loads(m.group(0))
+                recs = obj.get("recommendations", [])
+                if isinstance(recs, list):
+                    return recs
+            except Exception:
+                pass
+        return []
+    recs = _parse_recs(raw)
+    event_set = {e.lower(): e for e in events}
+    cleaned = []
+    for r in recs:
+        e = (r.get("event") or "").strip()
+        if e.lower() in event_set:
+            try:
+                score = int(r.get("score", 0))
+            except Exception:
+                score = 0
+            reason = (r.get("reason") or "").strip()
+            cleaned.append({"event": event_set[e.lower()], "score": max(0, min(100, score)), "reason": reason})
+    cleaned.sort(key=lambda x: x.get("score", 0), reverse=True)
+    cleaned = cleaned[: min(max(top_k, 1), len(events))]
+    return cleaned

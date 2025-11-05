@@ -90,6 +90,19 @@ def get_interest_context(user_id: str, interest: str) -> list[dict]:
     except Exception:
         return []
 
+def get_event_context(user_id: str) -> list[dict]:
+    vec = fetch_user_vector(user_id)
+    if not vec or not getattr(vec, "metadata", None):
+        return []
+    raw = vec.metadata.get("ctx_events")
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
 def append_interest_context(
     user_id: str,
     interest: str,
@@ -129,4 +142,44 @@ def append_interest_context(
     index.update(
         id=user_id,
         set_metadata={_ctx_key(interest): json.dumps(merged, ensure_ascii=False)}
+    )
+
+def append_event_context(
+    user_id: str,
+    new_items: list[dict],
+    max_items: int = 100,
+):
+    """
+    new_items: list of {name:str, reason:str, score:int, ts?:str}
+    """
+    current = get_event_context(user_id)
+
+    # Deduplicate by (name, reason) keeping highest score / most recent
+    dedup = {(i.get("name","").strip().lower(), i.get("reason","").strip()): i for i in current}
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    for it in new_items:
+        n = (it.get("name") or "").strip()
+        r = (it.get("reason") or "").strip()
+        s = int(it.get("score", 0))
+        key = (n.lower(), r)
+        entry = {"name": n, "reason": r, "score": s, "ts": it.get("ts") or now_iso}
+        if key in dedup:
+            # keep the higher-score / newer one
+            prev = dedup[key]
+            if s > int(prev.get("score", 0)) or (prev.get("ts","") < entry["ts"]):
+                dedup[key] = entry
+        else:
+            dedup[key] = entry
+
+    merged = list(dedup.values())
+    # sort by score desc then recency desc
+    merged.sort(key=lambda x: (int(x.get("score",0)), x.get("ts","")), reverse=True)
+    if len(merged) > max_items:
+        merged = merged[:max_items]
+
+    # Write back to metadata
+    index.update(
+        id=user_id,
+        set_metadata={"ctx_events": json.dumps(merged, ensure_ascii=False)}
     )
