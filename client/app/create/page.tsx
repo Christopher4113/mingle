@@ -198,6 +198,12 @@ const Page = () => {
       return
     }
 
+    const now = new Date()
+    if (new Date(startsAtISO).getTime() < now.getTime()) {
+      alert("Start time can not be in the past. Pick a future date and time.")
+      return
+    }
+
     const body = {
       title: formData.title,
       description: formData.description,
@@ -430,6 +436,7 @@ const Page = () => {
                     name="date"
                     value={formData.date}
                     onChange={handleInputChange}
+                    min={toDateStr(new Date())}
                     required
                     className="w-full px-4 py-3 rounded-lg bg-white/20 text-white border border-white/30 focus:border-white focus:outline-none"
                   />
@@ -442,6 +449,7 @@ const Page = () => {
                     name="time"
                     value={formData.time}
                     onChange={handleInputChange}
+                    min={formData.date === toDateStr(new Date()) ? toTimeStr(new Date()) : undefined}
                     required
                     className="w-full px-4 py-3 rounded-lg bg-white/20 text-white border border-white/30 focus:border-white focus:outline-none"
                   />
@@ -455,6 +463,7 @@ const Page = () => {
                     name="endDate"
                     value={formData.endDate}
                     onChange={handleInputChange}
+                    min={toDateStr(new Date())}
                     className="w-full px-4 py-3 rounded-lg bg-white/20 text-white border border-white/30 focus:border-white focus:outline-none"
                   />
                   <p className="text-xs text-white/70 mt-1">Leave blank to use the same day as the start.</p>
@@ -468,6 +477,7 @@ const Page = () => {
                     name="endTime"
                     value={formData.endTime}
                     onChange={handleInputChange}
+                    min={formData.date === toDateStr(new Date()) ? toTimeStr(new Date()) : undefined}
                     className="w-full px-4 py-3 rounded-lg bg-white/20 text-white border border-white/30 focus:border-white focus:outline-none"
                   />
                   <p className="text-xs text-white/70 mt-1">Leave blank to use the same time as the start.</p>

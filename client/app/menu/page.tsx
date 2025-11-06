@@ -44,6 +44,13 @@ function pct(a: number, b: number) {
   return Math.min(100, Math.max(0, (a / b) * 100))
 }
 
+function isRecOut(v: unknown): v is RecOut {
+  if (typeof v !== "object" || v === null) return false
+  const obj = v as Record<string, unknown>
+  return obj.ok === true && Array.isArray(obj.recommendations)
+}
+
+
 type DiscoverEvent = {
   id: string;
   title: string;
@@ -91,12 +98,47 @@ type NotificationsResponse = {
   notifications: Notif[]
 }
 
+type UserMe = {
+  id: string
+  username?: string | null
+  name?: string | null
+  email?: string | null
+  profileImageUrl?: string | null
+  bio?: string | null
+  location?: string | null
+  interests: string[]
+  connections: number
+  createdAt: string
+  updateAt: string
+  events: number
+}
+
+type MeResp = { ok: boolean; user: UserMe }
+
+type RecItem = { name: string; score: number; reason: string }
+type RecOut = {
+  ok: boolean
+  user_id: string
+  created_user: boolean
+  added_bio_now: boolean
+  has_bio_after: boolean
+  recommendations: RecItem[]
+}
+
+
+
 const Page = () => {
   const { data: session, status } = useSession()
   const [selectedCategory, setSelectedCategory] = useState<string>("All")
   const [notifications, setNotifications] = useState<Notif[]>([])
   const [showNotifications, setShowNotifications] = useState(false)
   const [discover, setDiscover] = useState<DiscoverEvent[]>([]);
+  const [me, setMe] = useState<UserMe | null>(null)
+  const [recLoading, setRecLoading] = useState(false)
+  const [recError, setRecError] = useState<string | null>(null)
+  const [recEvents, setRecEvents] = useState<DiscoverEvent[]>([])
+  const [recMeta, setRecMeta] = useState<Record<string, { reason: string; score: number }>>({})
+
 
   const loadNotifications = useCallback(async () => {
     await fetch("/api/set-token", { method: "GET", credentials: "include" })
@@ -111,22 +153,39 @@ const Page = () => {
     }
   }, [])
 
+  const loadMe = useCallback(async () => {
+    await fetch("/api/set-token", { method: "GET", credentials: "include" })
+    const res = await fetch("/api/users/me", {
+      credentials: "include",
+      headers: authHeaders(),
+    })
+    if (!res.ok) return
+    const data: MeResp = await res.json()
+    if (data?.ok && data.user) setMe(data.user)
+  }, [])
+
 
   const loadDiscover = useCallback(async () => {
-    await fetch("/api/set-token", { method: "GET", credentials: "include" });
-    const res = await fetch("/api/users/menu", { credentials: "include", headers: authHeaders() });
-    if (!res.ok) return;
-    const data = await res.json();
-    if (data?.ok && Array.isArray(data.events)) setDiscover(data.events);
-  }, []);
+    await fetch("/api/set-token", { method: "GET", credentials: "include" })
+    const res = await fetch("/api/users/menu", {  // 👈 updated
+      credentials: "include",
+      headers: authHeaders(),
+    })
+    if (!res.ok) return
+    const data = await res.json()
+    if (data?.ok && Array.isArray(data.events)) setDiscover(data.events)
+  }, [])
+
+  
 
   useEffect(() => {
     if (status === "authenticated") {
       void fetch("/api/set-token", { method: "GET", credentials: "include" })
       void loadNotifications()
       void loadDiscover();
+      void loadMe();
     }
-  }, [status, loadNotifications, loadDiscover])
+  }, [status, loadNotifications, loadDiscover, loadMe])
 
   
   const markAsRead = async (id: string) => {
@@ -209,6 +268,76 @@ const Page = () => {
     alert(data.status === "ATTENDING" ? "You joined the event" : "Request sent to the host");
   }
 
+  const runEventRecs = useCallback(async () => {
+    if (!me) return
+    setRecLoading(true)
+    setRecError(null)
+
+    try {
+      await fetch("/api/set-token", { method: "GET", credentials: "include" })
+
+      const snippets = discover.map(
+        (e) => `${e.title} | ${e.category} | ${e.location} | ${e.description}`
+      )
+      const events = discover.map((e) => e.title)
+
+      const res = await fetch("/api/users/menu/recommendations", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bio: me.bio ?? "",
+          location: me.location ?? "",
+          interests: Array.isArray(me.interests) ? me.interests : [],
+          snippets,
+          events,
+        }),
+      })
+
+      // Parse once as unknown so we can narrow safely
+      const json: unknown = await res.json()
+
+      // If the proxy/fastapi returned an error JSON, surface it
+      if (!res.ok) {
+        const errMsg =
+          json && typeof json === "object" && "error" in json
+            ? String((json as { error?: unknown }).error ?? "Recommendation failed")
+            : "Recommendation failed"
+        throw new Error(errMsg)
+      }
+
+      // Success path: ensure it matches RecOut
+      if (!isRecOut(json)) {
+        throw new Error("Unexpected response shape from recommendations API")
+      }
+      const data = json // typed as RecOut by the guard
+
+      // Map recs back to concrete events by title, sort by score desc
+      const meta: Record<string, { reason: string; score: number }> = {}
+      const nameToEvent = new Map(discover.map((e) => [e.title, e]))
+      const chosen: DiscoverEvent[] = []
+
+      data.recommendations
+        .slice() // don’t mutate original
+        .sort((a, b) => b.score - a.score)
+        .forEach((r) => {
+          const evt = nameToEvent.get(r.name)
+          if (evt) {
+            chosen.push(evt)
+            meta[evt.id] = { reason: r.reason, score: r.score }
+          }
+        })
+
+      setRecEvents(chosen)
+      setRecMeta(meta)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to fetch recommendations"
+      setRecError(msg)
+    } finally {
+      setRecLoading(false)
+    }
+  }, [me, discover])
+
   if (status === "loading") {
     return (
       <div
@@ -252,7 +381,7 @@ const Page = () => {
         <div className="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
           <div>
             <h1 className="text-2xl font-bold text-white">
-              Welcome back, {session?.user.username || session?.user.name}!
+              Welcome back, {me?.username || me?.name || session?.user.username || session?.user.name}!
             </h1>
             <p className="text-white/80">Ready to connect and discover amazing events?</p>
           </div>
@@ -516,25 +645,77 @@ const Page = () => {
         </div>
 
         {/* AI Recommendations */}
-        <div className="mt-8 bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-6">
-          <h2 className="text-2xl font-bold text-white mb-4">🤖 AI Recommendations</h2>
-          <p className="text-white/80 mb-4">
-            Based on your interests and networking history, we think you would love these events:
-          </p>
-          <div className="grid md:grid-cols-3 gap-4">
-            <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-4">
-              <h4 className="font-semibold text-white mb-2">Design Thinking Workshop</h4>
-              <p className="text-white/70 text-sm">Perfect match for your creative background</p>
+        <div className="mt-8 bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-6 relative">
+          <div className="flex items-start justify-between mb-4">
+            <div>
+              <h2 className="text-2xl font-bold text-white">🤖 AI Recommendations</h2>
+              <p className="text-white/80">
+                Based on your interests and networking history, we’ll suggest events you’ll probably like.
+              </p>
             </div>
-            <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-4">
-              <h4 className="font-semibold text-white mb-2">Blockchain Meetup</h4>
-              <p className="text-white/70 text-sm">Trending in your network</p>
-            </div>
-            <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-4">
-              <h4 className="font-semibold text-white mb-2">Leadership Summit</h4>
-              <p className="text-white/70 text-sm">Based on your career goals</p>
-            </div>
+
+            <Button
+              onClick={runEventRecs}
+              disabled={recLoading || !me || discover.length === 0}
+              className="bg-white/20 backdrop-blur-sm border border-white/30 text-white hover:bg-white/30 transition-all duration-300"
+              title={!me ? "Load your profile first" : (discover.length === 0 ? "No events to rank" : "Get recommendations")}
+            >
+              {recLoading ? "Finding…" : "Get recommendations"}
+            </Button>
           </div>
+
+          {recError && (
+            <div className="mb-4 rounded-lg border border-red-300/40 bg-red-500/20 p-3 text-sm text-white">
+              {recError}
+            </div>
+          )}
+
+          {/* Cards appear only after we have recs */}
+          {recEvents.length > 0 ? (
+            <div className="grid md:grid-cols-3 gap-4">
+              {recEvents.map((event) => (
+                <div key={event.id} className="relative bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-4">
+                  {/* score chip */}
+                  <span className="absolute top-3 right-3 rounded-full bg-white/20 border border-white/30 text-[11px] px-2 py-0.5 text-white/90">
+                    {recMeta[event.id]?.score ?? 0}
+                  </span>
+
+                  <h4 className="font-semibold text-white mb-1">{event.title}</h4>
+                  <p className="text-white/70 text-sm mb-3">
+                    {recMeta[event.id]?.reason || "Recommended for you"}
+                  </p>
+
+                  <div className="text-white/80 text-sm space-y-1 mb-4">
+                    <div className="flex items-center gap-2">
+                      <span>📍</span><span className="line-clamp-1">{event.location}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span>🏷️</span><span>{event.category}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span>👥</span><span>{event.attendees} / {event.maxAttendees} attending</span>
+                    </div>
+                  </div>
+
+                  <Button
+                    disabled={event.isFull}
+                    onClick={() => handleJoin(event.id)}
+                    className={[
+                      "w-full rounded-xl border border-white/30 bg-white/15 px-4 py-2 font-semibold text-white",
+                      "transition-all duration-200 hover:bg-white/25 hover:shadow-[inset_0_0_0_999px_rgba(255,255,255,0.04)]",
+                      event.isFull ? "cursor-not-allowed opacity-60" : "",
+                    ].join(" ")}
+                  >
+                    {event.isFull ? "Event Full" : event.inviteOnly ? "Request to Join" : "Join Event"}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-white/15 bg-white/5 p-4 text-white/70 text-sm">
+              Click <span className="text-white font-medium">Get recommendations</span> to see personalized picks.
+            </div>
+          )}
         </div>
       </div>
     </div>

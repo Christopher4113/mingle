@@ -152,6 +152,8 @@ def recommend_names_from_pool(
 
 def reccomend_events_from_pool(
     bio: str,
+    location: str | None,
+    interests: List[str],
     snippets: List[str],
     events: List[str],
     prior_context: List[Dict[str, Any]] | None = None,
@@ -159,6 +161,8 @@ def reccomend_events_from_pool(
     llm: ChatGoogleGenerativeAI = llm,
 ) -> List[Dict[str, Any]]:
     bio = (bio or "").strip()
+    location = (location or "").strip()
+    interests = [i.strip() for i in (interests or []) if i and i.strip()]
     snippets = [s.strip() for s in (snippets or []) if s and s.strip()]
     events = [e.strip() for e in (events or []) if e and e.strip()]
     prior_context = prior_context or []
@@ -169,6 +173,13 @@ def reccomend_events_from_pool(
         You are helping pick relevant events for a user to attend.
         USER BIO:
         {bio}
+
+        USER LOCATION (if any):
+        {location}
+
+        USER INTERESTS:
+        {interests_block}
+
         PRIOR EVENT CONTEXT (past top picks; prefer diversity, avoid repeats):
         {prior_ctx_block}
         ALL EVENTS (snippets):
@@ -177,7 +188,7 @@ def reccomend_events_from_pool(
         {events_block}
 
         TASK:
-        1) Select up to {top_k} events from the EVENTS NAMES that best match the USER BIO,
+        1) Select up to {top_k} events from the EVENTS NAMES that best match the USER BIO USER LOCATION and USER INTERESTS,
         using the ALL EVENTS as evidence of fit (topics, speakers, goals).
         2) Assign a 0-100 relevance score (higher is better).
         3) Briefly explain the reason for each pick (one sentence).
@@ -190,6 +201,7 @@ def reccomend_events_from_pool(
         }}
     """
     prompt = PromptTemplate.from_template(template)
+    interests_block = "\n".join(f"- {i}" for i in interests) if interests else "- (none provided)"
     snippets_block = "\n".join(f"- {s}" for s in snippets) if snippets else "- (none provided)"
     events_block = "\n".join(f"- {e}" for e in events)
     prior_ctx_block = "- (none)\n"
@@ -200,6 +212,8 @@ def reccomend_events_from_pool(
         ) or "- (none)"
     formatted = prompt.format(
         bio=bio,
+        location=location or "(none)",
+        interests_block=interests_block,
         prior_ctx_block=prior_ctx_block,
         snippets_block=snippets_block,
         events_block=events_block,
