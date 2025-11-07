@@ -18,6 +18,7 @@ export async function GET(req: NextRequest) {
         AND: [
           { NOT: { userId } },          // exclude user’s own events
           { startsAt: { gte: now } },   // exclude events that already started
+          { EventAttendee: { none: { userId } } },
         ],
       },
       include: {
