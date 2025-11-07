@@ -50,6 +50,9 @@ function isRecOut(v: unknown): v is RecOut {
   return obj.ok === true && Array.isArray(obj.recommendations)
 }
 
+function isConnectRequest(n: Notif) {
+  return n.title === "Connection Request" || n.data?.kind === "CONNECT_REQUEST";
+}
 
 type DiscoverEvent = {
   id: string;
@@ -87,6 +90,7 @@ type Notif = {
     actorUsername?: string
     creatorId?: string
     creatorUsername?: string
+    kind?: "CONNECT_REQUEST" | "CONNECT_ACCEPTED" | "CONNECT_DECLINED" | "CONNECT_ACCEPTED_CONFIRM"
   } | null
   read: boolean
   createdAt: string
@@ -338,6 +342,49 @@ const Page = () => {
     }
   }, [me, discover])
 
+  // Accept a connection request from actorId, then mark this notif as read
+  const handleAcceptConnect = async (actorId: string, notifId: string) => {
+    await fetch(`/api/users/connect/${actorId}`, {
+      method: "PATCH",
+      credentials: "include",
+      headers: jsonAuthHeaders(),
+      body: JSON.stringify({ action: "accept" }),
+    });
+    // Mark this notification as read (or you could delete it)
+    await fetch("/api/users/notifications", {
+      method: "PATCH",
+      credentials: "include",
+      headers: jsonAuthHeaders(),
+      body: JSON.stringify({ id: notifId, action: "read" }),
+    });
+    await loadNotifications();
+  };
+
+  const handleDeclineConnect = async (actorId: string, notifId: string) => {
+    await fetch(`/api/users/connect/${actorId}`, {
+      method: "PATCH",
+      credentials: "include",
+      headers: jsonAuthHeaders(),
+      body: JSON.stringify({ action: "decline" }),
+    });
+    await fetch("/api/users/notifications", {
+      method: "PATCH",
+      credentials: "include",
+      headers: jsonAuthHeaders(),
+      body: JSON.stringify({ id: notifId, action: "read" }),
+    });
+    await loadNotifications();
+  };
+
+  const markOrClose = async (n: Notif) => {
+    if (isConnectRequest(n) && n.data?.actorId) {
+      await handleDeclineConnect(n.data.actorId, n.id);
+    } else {
+      await markAsRead(n.id);
+    }
+  };
+
+
   if (status === "loading") {
     return (
       <div
@@ -444,7 +491,7 @@ const Page = () => {
                 if (n.type === "EVENT_JOINED" && actor) {
                   displayMsg = `${actor} joined your event.`;
                 } else if (n.title === "Join Request" && actor) {
-                  displayMsg = `${actor} requested to join your invite only event.`;
+                  displayMsg = `${actor} requested to join ${n.data?.eventTitle ?? "the event"}.`;
                 } else if (n.title === "Request Approved" && creatorU) {
                   displayMsg = `You have been accepted to "${n.data?.eventTitle ?? "the event"}" by ${creatorU}.`;
                 } else if (n.title === "Request Declined" && creatorU) {
@@ -454,7 +501,7 @@ const Page = () => {
                 return (
                   <div
                     key={n.id}
-                    onClick={() => markAsRead(n.id)}
+                    onClick={() => markOrClose(n)}
                     className={`p-4 rounded-xl border transition-all duration-300 cursor-pointer ${
                       n.read
                         ? "bg-white/5 border-white/10 hover:bg-white/10"
@@ -468,9 +515,22 @@ const Page = () => {
                           <h3 className={`font-semibold ${n.read ? "text-white/80" : "text-white"}`}>
                             {n.title}
                             {/* username chips beside title when we know who */}
-                            {n.title === "Join Request" && actor ? (
-                              <span className="ml-2 rounded-full bg-white/10 px-2 py-0.5 text-xs text-white/70">@{actor}</span>
-                            ) : null}
+                            {n.title === "Join Request" && n.data?.eventId && actor &&(
+                              <div className="mb-2">
+                                <Link
+                                  href={`/events/${n.data.eventId}`}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="inline-block"
+                                >
+                                  <Button
+                                    size="sm"
+                                    className="bg-white/20 backdrop-blur-sm border border-white/30 text-white hover:bg-white/30 transition-all duration-300"
+                                  >
+                                    View event
+                                  </Button>
+                                </Link>
+                              </div>
+                            )}
                             {(n.title === "Request Approved" || n.title === "Request Declined") && creatorU ? (
                               <span className="ml-2 rounded-full bg-white/10 px-2 py-0.5 text-xs text-white/70">@{creatorU}</span>
                             ) : null}
@@ -501,6 +561,32 @@ const Page = () => {
                               onClick={(e) => {
                                 e.stopPropagation();
                                 void handleDeclineInvite(n.id);
+                              }}
+                            >
+                              Decline
+                            </Button>
+                          </div>
+                        )}
+
+                        {(n.title === "Connection Request" || n.data?.kind === "CONNECT_REQUEST") && n.data?.actorId && (
+                          <div className="mb-2 flex gap-2">
+                            <Button
+                              size="sm"
+                              className="bg-green-500/80 text-white hover:bg-green-600"
+                              onClick={(e) => {
+                                e.stopPropagation(); // don't trigger the container click (markAsRead)
+                                void handleAcceptConnect(n.data!.actorId!, n.id);
+                              }}
+                            >
+                              Accept
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              className="bg-red-500/80 text-white hover:bg-red-600"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void handleDeclineConnect(n.data!.actorId!, n.id);
                               }}
                             >
                               Decline

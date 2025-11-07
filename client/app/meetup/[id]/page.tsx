@@ -8,6 +8,7 @@ import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Users, Sparkles, Calendar, Clock, MapPin, Tag, X, UserCircle } from "lucide-react";
+import ConnectButton from "@/components/ConnectButton";
 
 function getCookie(name: string) {
   if (typeof document === "undefined") return undefined;
@@ -23,6 +24,31 @@ function to12h(hhmm: string) {
   return `${h}:${m} ${ampm}`;
 }
 
+function resolveUserIdByName(
+  displayName: string,
+  opts: {
+    names?: { userId: string; name: string | null; username: string | null }[] | null;
+    people?: { id: string; name?: string | null; username?: string | null }[] | null;
+  }
+): string | undefined {
+  const dn = displayName.trim().toLowerCase();
+
+  // 1) from /names endpoint
+  for (const p of opts.names ?? []) {
+    const n = (p.name ?? "").trim().toLowerCase();
+    const u = (p.username ?? "").trim().toLowerCase();
+    if (dn === n || dn === u) return p.userId;
+  }
+
+  // 2) from invited/attendees arrays
+  for (const p of opts.people ?? []) {
+    const n = (p.name ?? "").trim().toLowerCase();
+    const u = (p.username ?? "").trim().toLowerCase();
+    if (dn === n || dn === u) return p.id as string;
+  }
+
+  return undefined;
+}
 
 
 type EventDetail = {
@@ -621,6 +647,9 @@ export default function Page() {
                       <p className="text-white/50 text-xs mt-1">Joined {new Date(a.joinedAt).toLocaleString()}</p>
                     </div>
                   </div>
+                  <div className="mt-2 flex justify-end">
+                    <ConnectButton targetUserId={a.id} />
+                  </div>
                 </div>
               ))}
             </div>
@@ -705,10 +734,14 @@ export default function Page() {
               </div>
             </div>
 
-            <div className="mt-6 flex justify-end">
-              <Button onClick={() => setOpenProfile(null)} className="bg-white/80 text-purple-700 hover:bg-white">
-                Close
-              </Button>
+            <div className="mt-6 flex justify-between items-center">
+              <div className="flex-1" />
+                <div className="flex items-center gap-2">
+                  <ConnectButton targetUserId={openProfile?.id} />
+                  <Button onClick={() => setOpenProfile(null)} className="bg-white/80 text-purple-700 hover:bg-white">
+                    Close
+                  </Button>
+                </div>
             </div>
           </div>
         </div>
@@ -735,32 +768,52 @@ export default function Page() {
               <p className="text-white/80 text-sm">No recommendations this time.</p>
             ) : (
               <div className="space-y-3 max-h-[60vh] overflow-auto pr-1">
-                {recsRender.map((r, idx) => (
-                  <div key={idx} className="bg-white/10 border border-white/10 rounded-xl p-3 flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-full overflow-hidden bg-white/10 flex items-center justify-center text-white font-bold shrink-0">
-                      {r.avatar ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={r.avatar || "/placeholder.svg"} alt={r.name} className="w-full h-full object-cover" />
-                      ) : (
-                        r.name.charAt(0)
-                      )}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-white font-semibold truncate">{r.name}</p>
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-white/10 border border-white/20 text-white/80 shrink-0">
-                          Score {r.score}
-                        </span>
+                {recsRender.map((r, idx) => {
+                  const targetId = resolveUserIdByName(r.name, {
+                    names: eventNamesData ?? [],
+                    people: attendeesList, // fallback to attendees
+                  });
+
+                  return (
+                    <div key={idx} className="bg-white/10 border border-white/10 rounded-xl p-3 flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-full overflow-hidden bg-white/10 flex items-center justify-center text-white font-bold shrink-0">
+                        {r.avatar ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={r.avatar || "/placeholder.svg"} alt={r.name} className="w-full h-full object-cover" />
+                        ) : (
+                          r.name.charAt(0)
+                        )}
                       </div>
-                      {r.snippet && (
-                        <p className="text-white/80 text-sm mt-1 line-clamp-3">{r.snippet}</p>
-                      )}
-                      <p className="text-white/60 text-xs mt-2">
-                        <span className="font-medium text-white/80">Why:</span> {r.reason}
-                      </p>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-white font-semibold truncate">{r.name}</p>
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-white/10 border border-white/20 text-white/80 shrink-0">
+                            Score {r.score}
+                          </span>
+                        </div>
+
+                        {r.snippet && (
+                          <p className="text-white/80 text-sm mt-1 line-clamp-3">{r.snippet}</p>
+                        )}
+                        <p className="text-white/60 text-xs mt-2">
+                          <span className="font-medium text-white/80">Why:</span> {r.reason}
+                        </p>
+
+                        <div className="mt-3 flex justify-end">
+                          {targetId ? (
+                            <ConnectButton targetUserId={targetId} />
+                          ) : (
+                            <Button disabled className="bg-white/10 text-white border border-white/20">
+                              Can not connect (not in roster)
+                            </Button>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
+
               </div>
             )}
 

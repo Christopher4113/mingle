@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Card } from "@/components/ui/card"
 import { Search, UserPlus, UserMinus, Users, Sparkles, X } from "lucide-react"
 import { useRef } from "react";
+import ConnectButton from "@/components/ConnectButton";
 
 function Avatar({ src, alt }: { src?: string | null; alt: string }) {
   return (
@@ -54,6 +55,32 @@ function to12h(hhmm: string) {
   const ampm = h >= 12 ? "PM" : "AM"
   h = h % 12 || 12
   return `${h}:${m} ${ampm}`
+}
+
+function resolveUserIdByName(
+  displayName: string,
+  opts: {
+    names?: { userId: string; name: string | null; username: string | null }[] | null;
+    people?: { id: string; name?: string | null; username?: string | null }[] | null;
+  }
+): string | undefined {
+  const dn = displayName.trim().toLowerCase();
+
+  // 1) from /names endpoint
+  for (const p of opts.names ?? []) {
+    const n = (p.name ?? "").trim().toLowerCase();
+    const u = (p.username ?? "").trim().toLowerCase();
+    if (dn === n || dn === u) return p.userId;
+  }
+
+  // 2) from invited/attendees arrays
+  for (const p of opts.people ?? []) {
+    const n = (p.name ?? "").trim().toLowerCase();
+    const u = (p.username ?? "").trim().toLowerCase();
+    if (dn === n || dn === u) return p.id as string;
+  }
+
+  return undefined;
 }
 
 
@@ -593,6 +620,8 @@ export default function EventDetailPage() {
     return "";
   }
 
+  
+
   if (status === "loading" || loading) {
     return (
       <div
@@ -826,6 +855,7 @@ export default function EventDetailPage() {
                       ) : null}
                     </div>
                   </div>
+                  <ConnectButton targetUserId={person.id} className="bg-blue-500/80 text-white hover:bg-blue-600" />
                   <Button
                     onClick={() => handleInvite(person)}
                     size="sm"
@@ -891,6 +921,8 @@ export default function EventDetailPage() {
                         {person.location ? (
                           <p className="text-white/60 text-xs">📍 {person.location}</p>
                         ) : null}
+
+                        
 
                         {/* Status pill */}
                         <span
@@ -1003,10 +1035,16 @@ export default function EventDetailPage() {
                 </div>
               </div>
 
-              <div className="mt-6 flex justify-end">
-                <Button onClick={() => setOpenProfile(null)} className="bg-white/80 text-purple-700 hover:bg-white">
-                  Close
-                </Button>
+              <div className="mt-6 flex justify-between items-center">
+                {/* Connect action (right-aligned on mobile) */}
+                <div className="flex-1" />
+                <div className="flex items-center gap-2">
+                  {/* Connect button */}
+                  <ConnectButton targetUserId={openProfile?.id} />
+                  <Button onClick={() => setOpenProfile(null)} className="bg-white/80 text-purple-700 hover:bg-white">
+                    Close
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
@@ -1041,32 +1079,51 @@ export default function EventDetailPage() {
               <p className="text-white/80 text-sm">No recommendations this time.</p>
             ) : (
               <div className="space-y-3 max-h-[60vh] overflow-auto pr-1">
-                {recsRender.map((r, idx) => (
-                  <div key={idx} className="bg-white/10 border border-white/10 rounded-xl p-3 flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-full overflow-hidden bg-white/10 flex items-center justify-center text-white font-bold shrink-0">
-                      {r.avatar ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={r.avatar || "/placeholder.svg"} alt={r.name} className="w-full h-full object-cover" />
-                      ) : (
-                        r.name.charAt(0)
-                      )}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-white font-semibold truncate">{r.name}</p>
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-white/10 border border-white/20 text-white/80 shrink-0">
-                          Score {r.score}
-                        </span>
+                {recsRender.map((r, idx) => {
+                  const targetId = resolveUserIdByName(r.name, {
+                    names: eventNamesData ?? [],
+                    people: invitedPeople, // fallback to attendees
+                  });
+
+                  return (
+                    <div key={idx} className="bg-white/10 border border-white/10 rounded-xl p-3 flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-full overflow-hidden bg-white/10 flex items-center justify-center text-white font-bold shrink-0">
+                        {r.avatar ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={r.avatar || "/placeholder.svg"} alt={r.name} className="w-full h-full object-cover" />
+                        ) : (
+                          r.name.charAt(0)
+                        )}
                       </div>
-                      {r.snippet && (
-                        <p className="text-white/80 text-sm mt-1 line-clamp-3">{r.snippet}</p>
-                      )}
-                      <p className="text-white/60 text-xs mt-2">
-                        <span className="font-medium text-white/80">Why:</span> {r.reason}
-                      </p>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-white font-semibold truncate">{r.name}</p>
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-white/10 border border-white/20 text-white/80 shrink-0">
+                            Score {r.score}
+                          </span>
+                        </div>
+
+                        {r.snippet && (
+                          <p className="text-white/80 text-sm mt-1 line-clamp-3">{r.snippet}</p>
+                        )}
+                        <p className="text-white/60 text-xs mt-2">
+                          <span className="font-medium text-white/80">Why:</span> {r.reason}
+                        </p>
+
+                        <div className="mt-3 flex justify-end">
+                          {targetId ? (
+                            <ConnectButton targetUserId={targetId} />
+                          ) : (
+                            <Button disabled className="bg-white/10 text-white border border-white/20">
+                              Can not connect (not in roster)
+                            </Button>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 

@@ -64,6 +64,8 @@ model User {
   createdEvents   Event[]
   EventAttendee EventAttendee[]
   notifications   Notification[]
+  requestedConnections Connection[] @relation("RequestedConnections")
+  receivedConnections  Connection[] @relation("ReceivedConnections")
   @@map("users")
   
 }
@@ -144,3 +146,29 @@ model VerificationToken {
   @@unique([identifier, token])
   @@map("verification_tokens")
 }
+
+// prisma/schema.prisma  (additions)
+
+enum ConnectionStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+}
+
+model Connection {
+  id           String           @id @default(cuid())
+  requesterId  String
+  recipientId  String
+  status       ConnectionStatus @default(PENDING)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  requester    User             @relation("RequestedConnections", fields: [requesterId], references: [id], onDelete: Cascade)
+  recipient    User             @relation("ReceivedConnections", fields: [recipientId], references: [id], onDelete: Cascade)
+
+  // prevent the same direction duplicate
+  @@unique([requesterId, recipientId])
+  @@index([recipientId, status])
+  @@index([requesterId, status])
+}
+
