@@ -185,7 +185,7 @@ export default function EventDetailPage() {
 
   const [recsOpen, setRecsOpen] = useState(false);
   const [recsLoading, setRecsLoading] = useState(false);
-  const [recs, setRecs] = useState<RecItem[]>([]);
+  const [, setRecs] = useState<RecItem[]>([]);
 
   // For enriching: avatar + snippet by name
   type RecRenderItem = RecItem & { avatar?: string; snippet?: string };

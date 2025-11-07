@@ -162,7 +162,7 @@ export default function Page() {
   // --- NEW: recs modal state
   const [recsOpen, setRecsOpen] = useState(false);
   const [recsLoading, setRecsLoading] = useState(false);
-  const [recs, setRecs] = useState<RecItem[]>([]);
+  const [, setRecs] = useState<RecItem[]>([]);
 
   // for enriching the modal (avatar + snippet by name)
   type RecRenderItem = RecItem & { avatar?: string; snippet?: string };

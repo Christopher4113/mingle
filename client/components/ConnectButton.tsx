@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { useConnection, ConnStatus } from "@/hooks/useConnection";
+import { useConnection } from "@/hooks/useConnection";
 import { UserPlus, Handshake, Clock, Ban } from "lucide-react";
 
 export default function ConnectButton({
