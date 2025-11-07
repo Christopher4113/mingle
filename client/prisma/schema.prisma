@@ -66,6 +66,8 @@ model User {
   notifications   Notification[]
   requestedConnections Connection[] @relation("RequestedConnections")
   receivedConnections  Connection[] @relation("ReceivedConnections")
+  userConnectionsOwner UserConnection[] @relation("UserConnectionsOwner")
+  userConnectionsPeer  UserConnection[] @relation("UserConnectionsPeer")
   @@map("users")
   
 }
@@ -170,5 +172,18 @@ model Connection {
   @@unique([requesterId, recipientId])
   @@index([recipientId, status])
   @@index([requesterId, status])
+}
+
+model UserConnection {
+  id               String   @id @default(cuid())
+  userId           String
+  connectedUserId  String
+  createdAt        DateTime @default(now())
+
+  user             User     @relation("UserConnectionsOwner", fields: [userId], references: [id], onDelete: Cascade)
+  connectedUser    User     @relation("UserConnectionsPeer",  fields: [connectedUserId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, connectedUserId]) // enables upsert by compound key
+  @@map("user_connections")           // physical table name
 }
 

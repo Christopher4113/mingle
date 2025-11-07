@@ -10,6 +10,18 @@ import { dataUrlToBlob } from "@/helpers/dataUrlToBlob"
 import { useEdgeStore } from "@/lib/edgestore"
 import Image from "next/image"
 
+
+type ConnectionUser = {
+  id: string
+  username: string | null
+  name: string | null
+  bio: string | null
+  location: string | null
+  connections: number
+  profileImageUrl: string | null
+}
+
+
 export default function ProfilePage() {
   const { data: session, status } = useSession()
   const [isEditing, setIsEditing] = useState(false)
@@ -23,6 +35,9 @@ export default function ProfilePage() {
     eventsAttended: 0,
     connectionsMade: 0,
   })
+
+  const [connections, setConnections] = useState<ConnectionUser[]>([]) 
+  const [loadingConnections, setLoadingConnections] = useState(false)   
 
   const [existingImageUrl, setExistingImageUrl] = useState<string | null>(null);
   const isDataUrl = (url?: string | null) => !!url && url.startsWith('data:');
@@ -48,6 +63,25 @@ export default function ProfilePage() {
         : [...prev.interests, interest],
     }))
   }
+
+  const loadConnections = useCallback(async () => {
+    setLoadingConnections(true)
+    try {
+      const token = getCookie("token")
+      const res = await fetch("/api/users/profile/connection", {
+        method: "GET",
+        credentials: "include",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+      if (!res.ok) throw new Error("Failed to load connections")
+      const data = await res.json()
+      setConnections(Array.isArray(data.users) ? data.users : [])
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setLoadingConnections(false)
+    }
+  }, [])
 
   useEffect(() => {
     (async () => {
@@ -80,12 +114,13 @@ export default function ProfilePage() {
             setExistingImageUrl(user.profileImageUrl);
             setProfileImage(user.profileImageUrl);
           }
+          await loadConnections();
         } catch (e) {
           console.error(e);
         }
       }
     })();
-  }, [status]);
+  }, [status,loadConnections]);
 
   const loadProfile = useCallback(async () => {
     const token = getCookie("token");
@@ -116,6 +151,32 @@ export default function ProfilePage() {
     if (!url) return false;
     return url.includes("edgestore") || url.includes("publicfiles"); // adjust if needed
   }
+
+  const removeConnection = useCallback(
+    async (otherUserId: string) => {
+      try {
+        const token = getCookie("token")
+        const res = await fetch(`/api/users/profile/connection?userId=${encodeURIComponent(otherUserId)}`, {
+          method: "DELETE",
+          credentials: "include",
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        })
+        const data = await res.json()
+        if (!res.ok || !data?.ok) {
+          console.error(data)
+          alert(data?.error || "Failed to remove connection")
+          return
+        }
+
+        // Refresh list + counters
+        await Promise.all([loadConnections(), loadProfile()])
+      } catch (e) {
+        console.error(e)
+        alert("Something went wrong.")
+      }
+    },
+    [loadConnections, loadProfile]
+  )
     
   
   if (status === "loading") {
@@ -395,6 +456,81 @@ export default function ProfilePage() {
           </div>
           {isEditing && (
             <p className="text-white/60 text-sm mt-4">Click on interests to add or remove them from your profile</p>
+          )}
+        </div>
+
+        {/* Connections Section */}
+        <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-8 mb-8">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl font-bold">Connections</h2>
+            {loadingConnections ? (
+              <span className="text-white/70 text-sm">Loading…</span>
+            ) : (
+              <span className="text-white/60 text-sm">
+                {connections.length} {connections.length === 1 ? "person" : "people"}
+              </span>
+            )}
+          </div>
+
+          {connections.length === 0 ? (
+            <p className="text-white/80">No connections yet.</p>
+          ) : (
+            <ul className="space-y-4">
+              {connections.map((u) => {
+                const displayName = u.username || u.name || "User";
+                return (
+                  <li
+                    key={u.id}
+                    className="flex items-center gap-4 bg-white/10 border border-white/20 rounded-xl p-4"
+                  >
+                    <div className="relative w-12 h-12 rounded-full overflow-hidden bg-white/10 shrink-0">
+                      {u.profileImageUrl ? (
+                        <Image
+                          src={u.profileImageUrl}
+                          alt={displayName}
+                          fill
+                          sizes="256px"
+                          className="object-cover"
+                        />
+                      ) : (
+                        <div className="absolute inset-0 flex items-center justify-center text-sm">
+                          {(displayName ?? "U")
+                            .split(" ")
+                            .map((n) => n[0])
+                            .join("")
+                            .slice(0, 2)
+                            .toUpperCase()}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold truncate">{displayName}</p>
+                        {u.location ? (
+                          <span className="text-xs px-2 py-0.5 rounded-md bg-white/15 border border-white/20">
+                            {u.location}
+                          </span>
+                        ) : null}
+                      </div>
+                      {u.bio ? (
+                        <p className="text-white/80 text-sm mt-1 line-clamp-2">{u.bio}</p>
+                      ) : (
+                        <p className="text-white/50 text-sm mt-1 italic">No bio</p>
+                      )}
+                    </div>
+
+                    <Button
+                      onClick={() => removeConnection(u.id)}
+                      className="px-4 py-2 rounded-lg border border-white/30 bg-white/10 hover:bg-white/20 transition"
+                      title={`Remove ${displayName}`}
+                    >
+                      Remove
+                    </Button>
+                  </li>
+                )
+              })}
+            </ul>
           )}
         </div>
 
