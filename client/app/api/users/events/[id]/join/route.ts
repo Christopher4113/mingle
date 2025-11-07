@@ -92,6 +92,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
           data: { attendees: Math.min(ev.maxAttendees, ev.attendees + 1) },
         });
 
+        await tx.user.update({
+          where: { id: userId },
+          data: { events: { increment: 1 } },
+        });
+
         // Notify creator that a user joined
         const notif = await tx.notification.create({
           data: {
@@ -171,6 +176,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
             data: { attendees: Math.min(ev.maxAttendees, ev.attendees + 1) },
           });
         }
+
+        await tx.user.update({
+          where: { id: userId },
+          data: { events: { increment: 1 } },
+        });
 
         const notif = await tx.notification.create({
           data: {

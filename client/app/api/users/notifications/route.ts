@@ -78,17 +78,49 @@ export async function PATCH(req: NextRequest) {
     if (!data.eventId) return bad("Invalid notification payload");
 
     if (action === "accept_invite") {
-      // mark attendee as ATTENDING
-      await db.eventAttendee.updateMany({
-        where: { eventId: data.eventId, userId },
-        data: { status: "ATTENDING" },
+      // do it safely in a transaction
+      const result = await db.$transaction(async (tx) => {
+        // load attendee row and event
+        const attendee = await tx.eventAttendee.findUnique({
+          where: { eventId_userId: { eventId: data.eventId!, userId } },
+          select: { status: true },
+        });
+        if (!attendee) return { ok: false, error: "No invite found" };
+
+        const ev = await tx.event.findUnique({
+          where: { id: data.eventId! },
+          select: { id: true, attendees: true, maxAttendees: true },
+        });
+        if (!ev) return { ok: false, error: "Event not found" };
+
+        if (attendee.status !== "ATTENDING") {
+          if (ev.attendees >= ev.maxAttendees) return { ok: false, error: "Event is full" };
+
+          // upgrade to ATTENDING
+          await tx.eventAttendee.update({
+            where: { eventId_userId: { eventId: data.eventId!, userId } },
+            data: { status: "ATTENDING" },
+          });
+
+          await tx.event.update({
+            where: { id: data.eventId! },
+            data: { attendees: Math.min(ev.maxAttendees, ev.attendees + 1) },
+          });
+
+          // ✅ bump user's joined-events counter once on first transition
+          await tx.user.update({
+            where: { id: userId },
+            data: { events: { increment: 1 } },
+          });
+        }
+
+        // remove the handled invitation notification
+        await tx.notification.delete({ where: { id } });
+
+        return { ok: true, changed: "accepted" as const };
       });
-      // Optionally bump event.attendees count here if you want to enforce capacity server-side
 
-      // delete the handled notification so it "goes away"
-      await db.notification.delete({ where: { id } });
-
-      return NextResponse.json({ ok: true, changed: "accepted" });
+      return NextResponse.json(result);
     }
 
     if (action === "decline_invite") {
