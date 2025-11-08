@@ -18,7 +18,11 @@ from model.pinecone import (
 from agent.agent import recommend_names_from_pool, reccomend_events_from_pool
 from pydantic import BaseModel, Field
 from enum import Enum
+import os
+from dotenv import load_dotenv
 
+load_dotenv()
+NEXT_PUBLIC_APP_URL = os.getenv("NEXT_PUBLIC_APP_URL", "http://localhost:3000")
 
 class InterestType(str, Enum):
     networking = "Networking"
@@ -69,6 +73,7 @@ class RecommendationsEvent(BaseModel):
 app = FastAPI()
 origins = [
     "http://localhost:3000",
+    NEXT_PUBLIC_APP_URL,
 ]
 app.add_middleware(
     CORSMiddleware,
@@ -81,6 +86,10 @@ app.add_middleware(
 @app.get("/")
 def read_root():
     return {"message": "Hello, FastAPI!"}
+
+@app.get("/ping")
+def ping():
+    return {"status": "alive"}
 
 @app.get("/me")
 def get_me(current_user: dict = Depends(get_current_user)):
