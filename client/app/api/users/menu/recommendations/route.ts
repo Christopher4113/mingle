@@ -1,8 +1,9 @@
-// app/api/recommendations/route.ts
+// app/api/users/menu/recommendations/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
 const FASTAPI_URL = process.env.FASTAPI_URL ?? "http://localhost:8000/eventRecommendations";
+const EVENT_RECS_URL = new URL("/eventRecommendations", FASTAPI_URL).toString();
 
 export async function POST(req: NextRequest) {
   try {
@@ -13,7 +14,7 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
 
-    const res = await fetch(FASTAPI_URL, {
+    const res = await fetch(EVENT_RECS_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

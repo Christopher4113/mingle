@@ -77,7 +77,7 @@ export async function sendNotificationEmail(opts: {
             View notification
           </a>
           <p style="margin-top:24px; font-size:12px; color:#475569;">
-            If you’re not signed in, you’ll be asked to log in first and then we’ll take you right there.
+            If you are not signed in, you will be asked to log in first and then we will take you right there.
           </p>
         </td>
       </tr>
