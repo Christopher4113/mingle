@@ -3,6 +3,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import SessionWrapper from "@/components/SessionWrapper";
 import { EdgeStoreProvider } from "@/lib/edgestore";
+import {Toaster} from "react-hot-toast";
+
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
@@ -31,6 +33,14 @@ export default function RootLayout({
         <SessionWrapper>
           <EdgeStoreProvider>
             {children}
+            <Toaster
+              position="top-right"
+              toastOptions={{
+                style: { background: "#111827", color: "#fff", border: "1px solid rgba(255,255,255,.15)" },
+                success: { iconTheme: { primary: "#22c55e", secondary: "#111827" } },
+                error: { iconTheme: { primary: "#ef4444", secondary: "#111827" } },
+              }}
+            />
           </EdgeStoreProvider>
         </SessionWrapper>
       </body>

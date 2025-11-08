@@ -12,6 +12,8 @@ import { Card } from "@/components/ui/card"
 import { Search, UserPlus, UserMinus, Users, Sparkles, X } from "lucide-react"
 import { useRef } from "react";
 import ConnectButton from "@/components/ConnectButton";
+import toast from "react-hot-toast";
+
 
 function Avatar({ src, alt }: { src?: string | null; alt: string }) {
   return (
@@ -499,7 +501,7 @@ export default function EventDetailPage() {
 
     // Need attendees to recommend from
     if (!eventNamesData || !eventNamesData.length) {
-      alert("No attendees to recommend from yet.");
+      toast.error("No attendees to recommend from yet.");
       return;
     }
 
@@ -526,7 +528,7 @@ export default function EventDetailPage() {
 
       const res = await axios.post<RecsResp>("/api/users/recommendations", body);
       if (!res.data?.ok) {
-        alert("Failed to get recommendations.");
+        toast.error("Failed to get recommendations.");
         return;
       }
 
@@ -561,7 +563,7 @@ export default function EventDetailPage() {
       setRecsOpen(true);
     } catch (e) {
       console.error(e);
-      alert("Could not generate recommendations.");
+      toast.error("Could not generate recommendations.");
     } finally {
       setRecsLoading(false);
     }
@@ -578,7 +580,7 @@ export default function EventDetailPage() {
         body: JSON.stringify({ userId: personId, action: "approve" }),
       });
       const data = await res.json();
-      if (!data?.ok) return alert(data?.error ?? "Approve failed");
+      if (!data?.ok) return toast.error(data?.error ?? "Approve failed");
       await fetchInvited(); // refresh list/status pills
     } finally {
       setActioningId(null);
@@ -596,7 +598,7 @@ export default function EventDetailPage() {
         body: JSON.stringify({ userId: personId, action: "decline" }),
       });
       const data = await res.json();
-      if (!data?.ok) return alert(data?.error ?? "Decline failed");
+      if (!data?.ok) return toast.error(data?.error ?? "Decline failed");
       await fetchInvited();
     } finally {
       setActioningId(null);

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react"
 import { useSession, signOut } from "next-auth/react"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
+import toast from "react-hot-toast";
 
 function timeAgo(date: string | Date) {
   const d = typeof date === "string" ? new Date(date) : date
@@ -264,12 +265,12 @@ const Page = () => {
     });
     const data = await res.json();
     if (!data?.ok) {
-      alert(data?.error ?? "Unable to join");
+      toast.error(data?.error ?? "Unable to join");
       return;
     }
     // Soft refresh list so full/attendee counts update or the event disappears if you joined
     await loadDiscover();
-    alert(data.status === "ATTENDING" ? "You joined the event" : "Request sent to the host");
+    toast.error(data.status === "ATTENDING" ? "You joined the event" : "Request sent to the host");
   }
 
   const runEventRecs = useCallback(async () => {

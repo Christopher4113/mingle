@@ -9,7 +9,7 @@ import axios from "axios"
 import { dataUrlToBlob } from "@/helpers/dataUrlToBlob"
 import { useEdgeStore } from "@/lib/edgestore"
 import Image from "next/image"
-
+import toast from "react-hot-toast";
 
 type Social = Partial<{
   linkedin: string
@@ -177,7 +177,7 @@ export default function ProfilePage() {
         const data = await res.json()
         if (!res.ok || !data?.ok) {
           console.error(data)
-          alert(data?.error || "Failed to remove connection")
+          toast.error(data?.error || "Failed to remove connection")
           return
         }
 
@@ -185,7 +185,7 @@ export default function ProfilePage() {
         await Promise.all([loadConnections(), loadProfile()])
       } catch (e) {
         console.error(e)
-        alert("Something went wrong.")
+        toast.error("Something went wrong.")
       }
     },
     [loadConnections, loadProfile]
@@ -282,7 +282,7 @@ export default function ProfilePage() {
 
       if (!res.data?.ok) {
         console.error(res.data);
-        alert("Failed to save profile.");
+        toast.error("Failed to save profile.");
         return;
       }
 
@@ -302,7 +302,7 @@ export default function ProfilePage() {
       setIsEditing(false);
     } catch (e) {
       console.error(e);
-      alert("Something went wrong while saving.");
+      toast.error("Something went wrong while saving.");
     }
   };
 

@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Users, Sparkles, Calendar, Clock, MapPin, Tag, X, UserCircle } from "lucide-react";
 import ConnectButton from "@/components/ConnectButton";
-
+import toast from "react-hot-toast";
 function getCookie(name: string) {
   if (typeof document === "undefined") return undefined;
   const m = document.cookie.match(new RegExp("(^|;\\s*)" + name + "=([^;]*)"));
@@ -302,11 +302,11 @@ export default function Page() {
   const handleRecommendPeople = async () => {
     if (!params.id) return;
     if (!eventNamesData || !eventNamesData.length) {
-      alert("No attendees to recommend from yet.");
+      toast.error("No attendees to recommend from yet.");
       return;
     }
     if (!eventInterest) {
-      alert("Missing event category/interest. Try reloading.");
+      toast.error("Missing event category/interest. Try reloading.");
       return;
     }
 
@@ -327,7 +327,7 @@ export default function Page() {
       // ✅ Hit Next API (server will attach Authorization from HttpOnly cookie)
       const res = await axios.post<RecsResp>("/api/users/recommendations", body);
       if (!res.data?.ok) {
-        alert("Failed to get recommendations.");
+        toast.error("Failed to get recommendations.");
         return;
       }
 
@@ -360,7 +360,7 @@ export default function Page() {
       setRecsOpen(true);
     } catch (e) {
       console.error(e);
-      alert("Could not generate recommendations.");
+      toast.error("Could not generate recommendations.");
     } finally {
       setRecsLoading(false);
     }
@@ -379,13 +379,13 @@ export default function Page() {
       );
       if (res.data?.ok) {
         setEventProfile(res.data.attendee.profile ?? "");
-        alert("Profile saved successfully!");
+        toast.error("Profile saved successfully!");
       } else {
-        alert("Save failed.");
+        toast.error("Save failed.");
       }
     } catch (e) {
       console.error(e);
-      alert("Save failed.");
+      toast.error("Save failed.");
     } finally {
       setSaving(false);
     }

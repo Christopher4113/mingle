@@ -6,6 +6,7 @@ import Link from "next/link"
 import axios from "axios"
 import { Button } from "@/components/ui/button"
 import { useSession, signOut } from "next-auth/react"
+import toast from "react-hot-toast";
 
 /** ----- Small helpers ----- */
 function getCookie(name: string) {
@@ -37,6 +38,7 @@ function to12h(hhmm: string) {
   h = h % 12 || 12 // 0->12
   return `${h}:${m} ${ampm}`
 }
+
 
 /** Event shape used in the UI (date & time split for the form) */
 type EventUI = {
@@ -190,17 +192,17 @@ const Page = () => {
     const endsAtISO = combineToISO(endDate, endTime)
 
     if (!formData.date || !formData.time) {
-      alert("Please provide a start date and time.")
+      toast.error("Please provide a start date and time.")
       return
     }
     if (new Date(endsAtISO).getTime() < new Date(startsAtISO).getTime()) {
-      alert("End time must be after the start time.")
+      toast.error("End time must be after the start time.")
       return
     }
 
     const now = new Date()
     if (new Date(startsAtISO).getTime() < now.getTime()) {
-      alert("Start time can not be in the past. Pick a future date and time.")
+      toast.error("Start time can not be in the past. Pick a future date and time.")
       return
     }
 
@@ -231,7 +233,7 @@ const Page = () => {
       setActiveTab("manage")
     } catch (err) {
       console.error(err)
-      alert("Failed to save event.")
+      toast.error("Failed to save event.")
     }
   }
 
@@ -262,7 +264,7 @@ const Page = () => {
       await loadEvents() // refresh list after delete
     } catch (err) {
       console.error(err)
-      alert("Failed to delete event.")
+      toast.error("Failed to delete event.")
     }
   }
 
@@ -276,7 +278,7 @@ const Page = () => {
       await loadJoinedEvents()
     } catch (err) {
       console.error(err)
-      alert("Failed to leave event.")
+      toast.error("Failed to leave event.")
     }
   }
 
