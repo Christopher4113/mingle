@@ -34,6 +34,7 @@ export async function GET(req: NextRequest) {
         location: true,
         connections: true,
         profileImageUrl: true,
+        social: true, // NEW
       },
     });
 
@@ -47,9 +48,6 @@ export async function GET(req: NextRequest) {
 /**
  * DELETE — remove a connection
  * Query: /api/users/profile/connection?userId=<otherUserId>
- * - delete both directions in user_connections
- * - decrement both counters (floor at 0)
- * - mark any Connection row between the two users as DECLINED (so status isn't “connected”)
  */
 export async function DELETE(req: NextRequest) {
   try {
@@ -61,7 +59,6 @@ export async function DELETE(req: NextRequest) {
     if (!otherUserId) return bad("Missing userId");
 
     await db.$transaction(async (tx) => {
-      // remove both directions (ignore if missing)
       await tx.userConnection.deleteMany({
         where: {
           OR: [
@@ -71,7 +68,6 @@ export async function DELETE(req: NextRequest) {
         },
       });
 
-      // decrement counters safely
       const [meUser, otherUser] = await Promise.all([
         tx.user.findUnique({ where: { id: me }, select: { connections: true } }),
         tx.user.findUnique({ where: { id: otherUserId }, select: { connections: true } }),
@@ -84,7 +80,6 @@ export async function DELETE(req: NextRequest) {
         tx.user.update({ where: { id: otherUserId }, data: { connections: otherNext } }),
       ]);
 
-      // if there is an ACCEPTED “Connection”, flip it to DECLINED so GET status isn't “connected”
       const conn = await tx.connection.findFirst({
         where: {
           OR: [

@@ -11,6 +11,15 @@ import { useEdgeStore } from "@/lib/edgestore"
 import Image from "next/image"
 
 
+type Social = Partial<{
+  linkedin: string
+  twitter: string
+  instagram: string
+  discord: string
+  github: string
+  website: string
+}>
+
 type ConnectionUser = {
   id: string
   username: string | null
@@ -19,6 +28,7 @@ type ConnectionUser = {
   location: string | null
   connections: number
   profileImageUrl: string | null
+  social?: Social | null
 }
 
 
@@ -34,6 +44,7 @@ export default function ProfilePage() {
     joinedDate: "",      // you set from createdAt when GET returns it
     eventsAttended: 0,
     connectionsMade: 0,
+    social: {} as Social, 
   })
 
   const [connections, setConnections] = useState<ConnectionUser[]>([]) 
@@ -108,6 +119,7 @@ export default function ProfilePage() {
             joinedDate: user.createdAt ? new Date(user.createdAt).toLocaleDateString(undefined, { year: 'numeric', month: 'long' }) : prev.joinedDate,
             eventsAttended: typeof user.events === "number" ? user.events : prev.eventsAttended,
             connectionsMade: typeof user.connections === "number" ? user.connections : prev.connectionsMade,
+            social: (user.social ?? {}) as Social
           }));
 
           if (user.profileImageUrl) {
@@ -139,6 +151,7 @@ export default function ProfilePage() {
       interests: Array.isArray(user.interests) ? user.interests : prev.interests,
       eventsAttended: typeof user.events === "number" ? user.events : prev.eventsAttended,
       connectionsMade: typeof user.connections === "number" ? user.connections : prev.connectionsMade,
+      social: (user.social ?? {}) as Social,
     }));
 
     if (user.profileImageUrl) {
@@ -177,6 +190,21 @@ export default function ProfilePage() {
     },
     [loadConnections, loadProfile]
   )
+
+   // Build URLs for social handles
+  function socialUrl(key: keyof Social, handle: string) {
+    const h = (handle || "").trim().replace(/^@/, "")
+    if (!h) return null
+    switch (key) {
+      case "linkedin": return `https://www.linkedin.com/in/${encodeURIComponent(h)}/`
+      case "twitter":  return `https://x.com/${encodeURIComponent(h)}`
+      case "instagram":return `https://www.instagram.com/${encodeURIComponent(h)}/`
+      case "discord":  return `https://discordapp.com/users/${encodeURIComponent(h)}`
+      case "github":   return `https://github.com/${encodeURIComponent(h)}`
+      case "website":  return /^https?:\/\//i.test(h) ? h : `https://${h}`
+      default: return null
+    }
+  }
     
   
   if (status === "loading") {
@@ -246,6 +274,7 @@ export default function ProfilePage() {
         location: profile.location,
         interests: profile.interests,
         profileImageUrl: nextImageUrl,
+        social: profile.social,
       }, {
         withCredentials: true,
         headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -286,6 +315,8 @@ export default function ProfilePage() {
     typeof profileImage === "string"
       ? profileImage // dataURL or pasted URL
       : existingImageUrl || null;
+
+  const SOCIAL_ORDER: (keyof Social)[] = ["linkedin","twitter","instagram","discord","github","website"]
 
   return (
     <div
@@ -459,6 +490,47 @@ export default function ProfilePage() {
           )}
         </div>
 
+        {/* Social editor (NEW) */}
+        <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-8 mb-8">
+          <h2 className="text-2xl font-bold mb-6">Social</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {[
+              { key: "linkedin", label: "LinkedIn (username)" },
+              { key: "twitter", label: "Twitter/X (username)" },
+              { key: "instagram", label: "Instagram (username)" },
+              { key: "discord", label: "Discord (user id or handle)" },
+              { key: "github", label: "GitHub (username)" },
+              { key: "website", label: "Website (URL)" },
+            ].map(({ key, label }) => {
+              const sk = key as keyof Social;
+              return (
+                <div key={key}>
+                  <label className="block text-sm text-white/80 mb-1">{label}</label>
+                  <input
+                    type="text"
+                    value={profile.social?.[sk] ?? ""}
+                    onChange={(e) =>
+                      setProfile((prev) => ({
+                        ...prev,
+                        social: { ...(prev.social || {}), [sk]: e.target.value },
+                      }))
+                    }
+                    placeholder={
+                      key === "website" ? "myportfolio.com" :
+                      key === "linkedin" ? "jane-doe" :
+                      key === "twitter" ? "janedoe" :
+                      key === "instagram" ? "jane.doe" :
+                      key === "discord" ? "1234567890" : "janedoe"
+                    }
+                    className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white placeholder-white/60"
+                    disabled={!isEditing}
+                  />
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
         {/* Connections Section */}
         <div className="bg-white/10 backdrop-blur-sm border border-white/20 rounded-2xl p-8 mb-8">
           <div className="flex items-center justify-between mb-6">
@@ -478,28 +550,16 @@ export default function ProfilePage() {
             <ul className="space-y-4">
               {connections.map((u) => {
                 const displayName = u.username || u.name || "User";
+                const socials = (u.social ?? {}) as Social;
+
                 return (
-                  <li
-                    key={u.id}
-                    className="flex items-center gap-4 bg-white/10 border border-white/20 rounded-xl p-4"
-                  >
+                  <li key={u.id} className="flex items-center gap-4 bg-white/10 border border-white/20 rounded-xl p-4">
                     <div className="relative w-12 h-12 rounded-full overflow-hidden bg-white/10 shrink-0">
                       {u.profileImageUrl ? (
-                        <Image
-                          src={u.profileImageUrl}
-                          alt={displayName}
-                          fill
-                          sizes="256px"
-                          className="object-cover"
-                        />
+                        <Image src={u.profileImageUrl} alt={displayName} fill sizes="256px" className="object-cover" />
                       ) : (
                         <div className="absolute inset-0 flex items-center justify-center text-sm">
-                          {(displayName ?? "U")
-                            .split(" ")
-                            .map((n) => n[0])
-                            .join("")
-                            .slice(0, 2)
-                            .toUpperCase()}
+                          {(displayName ?? "U").split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
                         </div>
                       )}
                     </div>
@@ -518,6 +578,30 @@ export default function ProfilePage() {
                       ) : (
                         <p className="text-white/50 text-sm mt-1 italic">No bio</p>
                       )}
+
+                      {/* Social buttons */}
+                      <div className="flex flex-wrap gap-2 mt-3">
+                        {SOCIAL_ORDER.map((k) => {
+                          const handle = socials?.[k]
+                          const url = handle ? socialUrl(k, handle) : null
+                          if (!url) return null
+                          const label =
+                            k === "twitter" ? "Twitter" :
+                            k[0].toUpperCase() + k.slice(1)
+                          return (
+                            <a
+                              key={k}
+                              href={url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs px-3 py-1 rounded-md bg-white/15 border border-white/20 hover:bg-white/25 transition"
+                              title={`${label} profile`}
+                            >
+                              {label}
+                            </a>
+                          )
+                        })}
+                      </div>
                     </div>
 
                     <Button
