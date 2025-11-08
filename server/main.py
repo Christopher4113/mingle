@@ -1,6 +1,6 @@
 from typing import List, Dict, Any
 import traceback
-from fastapi import FastAPI, Depends, HTTPException, Query
+from fastapi import FastAPI, Depends, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from helpers.extractToken import get_current_user
 from model.pinecone import (
@@ -87,8 +87,9 @@ app.add_middleware(
 def read_root():
     return {"message": "Hello, FastAPI!"}
 
-@app.get("/ping")
-def ping():
+
+@app.api_route("/ping", methods=["GET", "HEAD"])
+def ping(request: Request):
     return {"status": "alive"}
 
 @app.get("/me")
