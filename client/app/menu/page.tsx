@@ -762,11 +762,6 @@ const Page = () => {
             <div className="grid md:grid-cols-3 gap-4">
               {recEvents.map((event) => (
                 <div key={event.id} className="relative bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl p-4">
-                  {/* score chip */}
-                  <span className="absolute top-3 right-3 rounded-full bg-white/20 border border-white/30 text-[11px] px-2 py-0.5 text-white/90">
-                    {recMeta[event.id]?.score ?? 0}
-                  </span>
-
                   <h4 className="font-semibold text-white mb-1">{event.title}</h4>
                   <p className="text-white/70 text-sm mb-3">
                     {recMeta[event.id]?.reason || "Recommended for you"}

@@ -727,11 +727,13 @@ export default function Page() {
                 <p className="text-white font-semibold">{openProfile.connections ?? 0}</p>
               </div>
               <div className="rounded-lg bg-white/10 p-3">
-                <p className="text-white/60 text-xs">Interests</p>
-                <p className="text-white font-semibold text-sm truncate">
+              <p className="text-white/60 text-xs mb-1">Interests</p>
+              <div className="overflow-x-auto scrollbar-hide">
+                <p className="text-white font-semibold text-sm whitespace-nowrap pr-2">
                   {(openProfile.interests ?? []).join(", ") || "—"}
                 </p>
               </div>
+            </div>
             </div>
 
             <div className="mt-6 flex justify-between items-center">
@@ -788,9 +790,6 @@ export default function Page() {
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-3">
                           <p className="text-white font-semibold truncate">{r.name}</p>
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-white/10 border border-white/20 text-white/80 shrink-0">
-                            Score {r.score}
-                          </span>
                         </div>
 
                         {r.snippet && (
