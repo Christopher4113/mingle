@@ -270,7 +270,7 @@ const Page = () => {
     }
     // Soft refresh list so full/attendee counts update or the event disappears if you joined
     await loadDiscover();
-    toast.error(data.status === "ATTENDING" ? "You joined the event" : "Request sent to the host");
+    toast.success(data.status === "ATTENDING" ? "You joined the event" : "Request sent to the host");
   }
 
   const runEventRecs = useCallback(async () => {
