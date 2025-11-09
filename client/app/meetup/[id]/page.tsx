@@ -654,20 +654,7 @@ export default function Page() {
               ))}
             </div>
           )}
-        </Card>
-
-        {/* Actions */}
-        <div className="flex gap-4">
-          <Button className="flex-1 bg-white text-purple-600 font-bold py-6 rounded-lg hover:bg-gray-100 transition-all duration-200 shadow-lg text-lg">
-            Join Event
-          </Button>
-          <Button
-            variant="outline"
-            className="flex-1 border-2 border-white/30 text-white font-bold py-6 rounded-lg hover:bg-white/10 transition-all duration-200 backdrop-blur-sm text-lg bg-transparent"
-          >
-            Share Event
-          </Button>
-        </div>
+        </Card>        
       </div>
 
       {/* Profile Modal */}
