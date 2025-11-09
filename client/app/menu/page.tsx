@@ -709,7 +709,7 @@ const Page = () => {
                       />
                     </div>
                     <div className="mt-1 text-right text-[11px] uppercase tracking-wide text-white/50">
-                      {pct(event.attendees, event.maxAttendees)}% filled
+                      {Math.round(pct(event.attendees, event.maxAttendees))}% filled
                     </div>
                   </div>
 
