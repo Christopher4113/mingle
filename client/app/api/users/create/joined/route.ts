@@ -60,34 +60,22 @@ export async function DELETE(req: NextRequest) {
     if (!eventId) return bad("Missing eventId");
 
     const result = await db.$transaction(async (tx) => {
-      // Grab the attendee row first
+      // Check current status (INVITED vs ATTENDING)
       const attendee = await tx.eventAttendee.findUnique({
         where: { eventId_userId: { eventId, userId } },
         select: { status: true },
       });
+      if (!attendee) return { changed: false, previousStatus: null as null | "ATTENDING" | "INVITED" };
 
-      if (!attendee) {
-        // Nothing to do; already not listed on this event
-        return { changed: false, previousStatus: null as null | "ATTENDING" | "INVITED" };
-      }
-
-      // If they were actually attending, decrement the live counter safely
+      // If they were counted as ATTENDING, atomically decrement (clamped at 0)
       if (attendee.status === "ATTENDING") {
-        const ev = await tx.event.findUnique({
-          where: { id: eventId },
-          select: { attendees: true },
+        await tx.event.updateMany({
+          where: { id: eventId, attendees: { gt: 0 } },
+          data: { attendees: { decrement: 1 } },
         });
-
-        if (ev) {
-          await tx.event.update({
-            where: { id: eventId },
-            data: { attendees: Math.max(0, ev.attendees - 1) },
-          });
-        }
       }
 
-      // Delete the attendee row for BOTH ATTENDING and INVITED.
-      // This is the key that lets invite-only events reappear in Discover.
+      // Remove the attendee row (works for ATTENDING and INVITED)
       await tx.eventAttendee.delete({
         where: { eventId_userId: { eventId, userId } },
       });
