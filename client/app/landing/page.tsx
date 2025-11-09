@@ -21,7 +21,7 @@ export default function MingleLanding() {
         <div className="relative z-10 text-center px-6 max-w-4xl mx-auto">
           <h1 className="text-6xl md:text-8xl font-bold text-white mb-6 text-balance">Connect Like Never Before</h1>
           <p className="text-xl md:text-2xl text-white/90 mb-8 leading-relaxed text-pretty">
-            Mingle is your AI-powered networking companion that helps you create meaningful connections, discover
+            Mingle is your AI-powered social companion that helps you create meaningful connections, discover
             exciting events, and build your social circle with intelligent recommendations.
           </p>
 
