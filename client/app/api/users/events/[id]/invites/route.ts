@@ -223,27 +223,54 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
     const { searchParams } = new URL(req.url);
     const userId = searchParams.get("userId") || "";
     if (!userId) return jsonBad("Missing userId");
-
     if (userId === creatorId) return jsonBad("Cannot remove event creator", 400);
 
-    await db.eventAttendee.deleteMany({ where: { eventId: id, userId } });
+    // Do the status check + decrement + delete atomically
+    await db.$transaction(async (tx) => {
+      const attendee = await tx.eventAttendee.findUnique({
+        where: { eventId_userId: { eventId: id, userId } },
+        select: { status: true },
+      });
+
+      if (!attendee) return; // nothing to remove
+
+      if (attendee.status === "ATTENDING") {
+        // atomic, clamped decrement
+        await tx.event.updateMany({
+          where: { id, attendees: { gt: 0 } },
+          data: { attendees: { decrement: 1 } },
+        });
+      }
+
+      await tx.eventAttendee.delete({
+        where: { eventId_userId: { eventId: id, userId } },
+      });
+    });
 
     // fresh invited list (still excluding creator)
     const rows = await db.eventAttendee.findMany({
       where: { eventId: id, userId: { not: creatorId } },
       include: {
-        user: { select: {
-          id: true, username: true, name: true, email: true,
-          bio: true, location: true, profileImageUrl: true,
-          interests: true, connections: true,
-        }},
+        user: {
+          select: {
+            id: true,
+            username: true,
+            name: true,
+            email: true,
+            bio: true,
+            location: true,
+            profileImageUrl: true,
+            interests: true,
+            connections: true,
+          },
+        },
       },
       orderBy: { createdAt: "desc" },
     });
 
     return NextResponse.json({
       ok: true,
-      invited: rows.map(r => ({
+      invited: rows.map((r) => ({
         id: r.user.id,
         username: r.user.username ?? null,
         name: r.user.name ?? "",
@@ -251,7 +278,7 @@ export async function DELETE(req: NextRequest, ctx: Ctx) {
         bio: r.user.bio ?? "",
         location: r.user.location ?? "",
         image: r.user.profileImageUrl ?? null,
-        status: (r.status === "ATTENDING" ? "attending" : "invited") as 'attending' | 'invited',
+        status: (r.status === "ATTENDING" ? "attending" : "invited") as "attending" | "invited",
         interests: r.user.interests ?? [],
         connections: r.user.connections ?? 0,
       })),
