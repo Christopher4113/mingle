@@ -11,7 +11,7 @@ Mingle is an AI-powered social app that helps you find and connect with the righ
 
 ## Demo
 
--[@Demo](https://vimeo.com/1135237610?share=copy&fl=sv&fe=ci)
+- [@Demo](https://vimeo.com/1135237610?share=copy&fl=sv&fe=ci)
 
 
 ## Features
