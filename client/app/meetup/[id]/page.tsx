@@ -379,7 +379,7 @@ export default function Page() {
       );
       if (res.data?.ok) {
         setEventProfile(res.data.attendee.profile ?? "");
-        toast.error("Profile saved successfully!");
+        toast.success("Profile saved successfully!");
       } else {
         toast.error("Save failed.");
       }
