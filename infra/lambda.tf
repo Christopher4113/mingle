@@ -39,9 +39,16 @@ resource "null_resource" "lambda_package" {
       # Install dependencies into build dir
       pip install -r ${local.build_dir}/requirements_utf8.txt -t ${local.build_dir} --quiet
 
-      # Create zip package
-      cd ${local.build_dir}
-      zip -r9 ${local.zip_path} . -q
+      # Create zip package using Python (zip may not be available)
+      python3 -c "
+import zipfile, os
+build='${local.build_dir}'
+with zipfile.ZipFile('${local.zip_path}', 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
+    for root, dirs, files in os.walk(build):
+        for f in files:
+            fp = os.path.join(root, f)
+            zf.write(fp, os.path.relpath(fp, build))
+"
     EOT
   }
 }
