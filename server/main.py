@@ -2,6 +2,7 @@ from typing import List, Dict, Any
 import traceback
 from fastapi import FastAPI, Depends, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from mangum import Mangum
 from helpers.extractToken import get_current_user
 from model.pinecone import (
     add_user_pinecone,
@@ -333,3 +334,5 @@ def get_event_recommendations(
         )
     except Exception as e:
         _http_500("Mapping recommendations failed", e)
+
+handler = Mangum(app)
