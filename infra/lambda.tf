@@ -39,6 +39,51 @@ resource "null_resource" "lambda_package" {
       # Install dependencies into build dir
       pip install -r ${local.build_dir}/requirements_utf8.txt -t ${local.build_dir} --quiet
 
+      # Strip unnecessary files to fit within Lambda 250MB unzipped limit
+      python3 -c "
+import shutil, os, glob
+
+build = '${local.build_dir}'
+
+# Remove __pycache__ directories (~65MB)
+for root, dirs, files in os.walk(build):
+    for d in dirs:
+        if d == '__pycache__':
+            shutil.rmtree(os.path.join(root, d))
+
+# Remove dist-info directories (~4MB)
+for item in os.listdir(build):
+    if item.endswith('.dist-info') or item.endswith('.egg-info'):
+        shutil.rmtree(os.path.join(build, item))
+
+# Remove test/tests directories (~17MB)
+for root, dirs, files in os.walk(build):
+    for d in dirs:
+        if d in ('tests', 'test'):
+            shutil.rmtree(os.path.join(root, d))
+
+# Remove googleapiclient discovery_cache (~90MB)
+dc = os.path.join(build, 'googleapiclient', 'discovery_cache')
+if os.path.isdir(dc):
+    shutil.rmtree(dc)
+    os.makedirs(dc)
+    open(os.path.join(dc, '__init__.py'), 'w').close()
+
+# Remove .pyc files
+for root, dirs, files in os.walk(build):
+    for f in files:
+        if f.endswith('.pyc'):
+            os.remove(os.path.join(root, f))
+
+# Strip shared libraries
+import subprocess
+for root, dirs, files in os.walk(build):
+    for f in files:
+        if f.endswith('.so'):
+            fp = os.path.join(root, f)
+            subprocess.run(['strip', '--strip-unneeded', fp], capture_output=True)
+"
+
       # Create zip package using Python (zip may not be available)
       python3 -c "
 import zipfile, os
